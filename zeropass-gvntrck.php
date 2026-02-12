@@ -380,12 +380,223 @@ function pwless_reset_password_form() {
 }
 add_shortcode('passwordless_reset', 'pwless_reset_password_form');
 
+function pwless_get_redirect_after_login() {
+    $redirect_url = get_option('pwless_redirect_url');
+    if (empty($redirect_url)) {
+        $redirect_url = home_url();
+    }
+
+    return $redirect_url;
+}
+
+function pwless_user_can_login_with_loggedin_plugin($user_id) {
+    if (!class_exists('Loggedin')) {
+        return true;
+    }
+
+    $loggedin = new Loggedin();
+    $check = $loggedin->validate_block_logic(true, '', '', $user_id);
+
+    return $check !== false;
+}
+
+function pwless_get_admin_generated_link_transient_key($admin_id, $user_id) {
+    return 'pwless_admin_link_' . intval($admin_id) . '_' . intval($user_id);
+}
+
+function pwless_get_admin_generated_link_data($user_id) {
+    $meta = get_user_meta($user_id, 'pwless_admin_generated_login_link', true);
+    if (!is_array($meta)) {
+        $meta = array();
+    }
+
+    return array(
+        'token_hash'   => isset($meta['token_hash']) ? $meta['token_hash'] : '',
+        'created_at'   => isset($meta['created_at']) ? intval($meta['created_at']) : 0,
+        'expires_at'   => isset($meta['expires_at']) ? intval($meta['expires_at']) : 0,
+        'max_uses'     => isset($meta['max_uses']) ? intval($meta['max_uses']) : 0,
+        'uses'         => isset($meta['uses']) ? intval($meta['uses']) : 0,
+        'last_used_at' => isset($meta['last_used_at']) ? intval($meta['last_used_at']) : 0,
+        'created_by'   => isset($meta['created_by']) ? intval($meta['created_by']) : 0,
+    );
+}
+
+function pwless_render_user_direct_login_card($user) {
+    if (!current_user_can('manage_options') || !current_user_can('edit_user', $user->ID)) {
+        return;
+    }
+
+    $data = pwless_get_admin_generated_link_data($user->ID);
+    $transient_key = pwless_get_admin_generated_link_transient_key(get_current_user_id(), $user->ID);
+    $generated = get_transient($transient_key);
+
+    $has_active_link = !empty($data['token_hash']);
+    $created_at = ($has_active_link && $data['created_at']) ? date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $data['created_at']) : '-';
+    $expires_at = $has_active_link ? ($data['expires_at'] ? date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $data['expires_at']) : 'Nunca') : '-';
+    $uses_info = $has_active_link ? ($data['max_uses'] > 0 ? ($data['uses'] . ' / ' . $data['max_uses']) : ($data['uses'] . ' / Ilimitado')) : '-';
+    $last_used = ($has_active_link && $data['last_used_at']) ? date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $data['last_used_at']) : '-';
+    $default_expiry = $data['expires_at'] > $data['created_at'] ? intval(($data['expires_at'] - $data['created_at']) / MINUTE_IN_SECONDS) : 0;
+    $default_max_uses = $data['max_uses'] > 0 ? $data['max_uses'] : 0;
+    ?>
+    <h2>ZeroPass: Link direto de login</h2>
+    <table class="form-table" role="presentation">
+        <tr>
+            <th><label for="pwless_admin_link_expiry_minutes">Expiração (minutos)</label></th>
+            <td>
+                <?php wp_nonce_field('pwless_generate_user_direct_link_' . $user->ID, 'pwless_generate_user_direct_link_nonce'); ?>
+                <input type="number" name="pwless_admin_link_expiry_minutes" id="pwless_admin_link_expiry_minutes" min="0" class="small-text" value="<?php echo esc_attr($default_expiry); ?>">
+                <p class="description">Use 0 para não expirar (padrão).</p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="pwless_admin_link_max_uses">Limite de usos</label></th>
+            <td>
+                <input type="number" name="pwless_admin_link_max_uses" id="pwless_admin_link_max_uses" min="0" class="small-text" value="<?php echo esc_attr($default_max_uses); ?>">
+                <p class="description">Use 0 para usos ilimitados (padrão).</p>
+            </td>
+        </tr>
+        <tr>
+            <th>Gerar link</th>
+            <td>
+                <button type="submit" name="pwless_generate_user_direct_link" value="1" class="button button-primary">Gerar link de login</button>
+                <p class="description">Ao clicar no link, o usuário faz login automaticamente no WordPress.</p>
+            </td>
+        </tr>
+        <?php if (is_array($generated) && !empty($generated['url'])): ?>
+            <tr>
+                <th><label for="pwless_admin_generated_link">Link gerado</label></th>
+                <td>
+                    <input type="text" id="pwless_admin_generated_link" class="regular-text code" readonly value="<?php echo esc_attr($generated['url']); ?>" style="width:100%;max-width:720px;">
+                    <p class="description">Copie este link e envie ao usuário.</p>
+                </td>
+            </tr>
+        <?php endif; ?>
+        <tr>
+            <th>Status do link atual</th>
+            <td>
+                <?php if (!$has_active_link): ?>
+                    <p><em>Nenhum link foi gerado para este usuário ainda.</em></p>
+                <?php endif; ?>
+                <p><strong>Criado em:</strong> <?php echo esc_html($created_at); ?></p>
+                <p><strong>Expira em:</strong> <?php echo esc_html($expires_at); ?></p>
+                <p><strong>Usos:</strong> <?php echo esc_html($uses_info); ?></p>
+                <p><strong>Último uso:</strong> <?php echo esc_html($last_used); ?></p>
+            </td>
+        </tr>
+    </table>
+    <?php
+}
+add_action('show_user_profile', 'pwless_render_user_direct_login_card');
+add_action('edit_user_profile', 'pwless_render_user_direct_login_card');
+
+function pwless_handle_generate_user_direct_link($user_id) {
+    if (!current_user_can('manage_options') || !current_user_can('edit_user', $user_id)) {
+        return;
+    }
+
+    if (!isset($_POST['pwless_generate_user_direct_link'])) {
+        return;
+    }
+
+    $nonce = isset($_POST['pwless_generate_user_direct_link_nonce']) ? sanitize_text_field(wp_unslash($_POST['pwless_generate_user_direct_link_nonce'])) : '';
+    if (!wp_verify_nonce($nonce, 'pwless_generate_user_direct_link_' . $user_id)) {
+        return;
+    }
+
+    $expiry_minutes = isset($_POST['pwless_admin_link_expiry_minutes']) ? absint($_POST['pwless_admin_link_expiry_minutes']) : 0;
+    $max_uses = isset($_POST['pwless_admin_link_max_uses']) ? absint($_POST['pwless_admin_link_max_uses']) : 0;
+    $created_at = current_time('timestamp');
+    $expires_at = $expiry_minutes > 0 ? ($created_at + ($expiry_minutes * MINUTE_IN_SECONDS)) : 0;
+    $token = wp_generate_password(48, false, false);
+
+    update_user_meta($user_id, 'pwless_admin_generated_login_link', array(
+        'token_hash'   => wp_hash_password($token),
+        'created_at'   => $created_at,
+        'expires_at'   => $expires_at,
+        'max_uses'     => $max_uses,
+        'uses'         => 0,
+        'last_used_at' => 0,
+        'created_by'   => get_current_user_id(),
+    ));
+
+    $generated_url = add_query_arg(
+        array(
+            'pwless_admin_login' => $token,
+            'user'               => $user_id,
+        ),
+        site_url('/')
+    );
+
+    $transient_key = pwless_get_admin_generated_link_transient_key(get_current_user_id(), $user_id);
+    set_transient($transient_key, array('url' => $generated_url), DAY_IN_SECONDS);
+
+    $target_user = get_user_by('ID', $user_id);
+    if ($target_user) {
+        pwless_log_attempt($target_user->user_email, 'admin_link_gerado');
+    }
+}
+add_action('personal_options_update', 'pwless_handle_generate_user_direct_link');
+add_action('edit_user_profile_update', 'pwless_handle_generate_user_direct_link');
+
+function pwless_process_admin_generated_user_link() {
+    if (!isset($_GET['pwless_admin_login']) || !isset($_GET['user'])) {
+        return;
+    }
+
+    $user_id = isset($_GET['user']) ? absint($_GET['user']) : 0;
+    $token = isset($_GET['pwless_admin_login']) ? sanitize_text_field(wp_unslash($_GET['pwless_admin_login'])) : '';
+    if (!$user_id || empty($token)) {
+        return;
+    }
+
+    $user = get_user_by('ID', $user_id);
+    $email = $user ? $user->user_email : 'unknown';
+    $data = pwless_get_admin_generated_link_data($user_id);
+    $now = current_time('timestamp');
+
+    if (empty($data['token_hash']) || !wp_check_password($token, $data['token_hash'])) {
+        pwless_log_attempt($email, 'admin_link_invalido');
+        wp_die('Link inválido. Solicite um novo link ao administrador.', 'Link inválido', array('response' => 403));
+    }
+
+    if ($data['expires_at'] > 0 && $now > $data['expires_at']) {
+        pwless_log_attempt($email, 'admin_link_expirado');
+        wp_die('Este link expirou. Solicite um novo link ao administrador.', 'Link expirado', array('response' => 403));
+    }
+
+    if ($data['max_uses'] > 0 && $data['uses'] >= $data['max_uses']) {
+        pwless_log_attempt($email, 'admin_link_limite');
+        wp_die('Este link já atingiu o limite de usos.', 'Limite atingido', array('response' => 403));
+    }
+
+    if (!pwless_user_can_login_with_loggedin_plugin($user_id)) {
+        pwless_log_attempt($email, 'admin_link_bloqueado');
+        wp_die('Você atingiu o limite máximo de logins simultâneos. Aguarde sessões antigas expirarem ou faça logout em outro dispositivo.', 'Login bloqueado', array('response' => 403));
+    }
+
+    $data['uses'] = intval($data['uses']) + 1;
+    $data['last_used_at'] = $now;
+    update_user_meta($user_id, 'pwless_admin_generated_login_link', $data);
+
+    wp_set_current_user($user_id);
+    wp_set_auth_cookie($user_id);
+
+    if ($user) {
+        do_action('wp_login', $user->user_login, $user);
+    }
+
+    pwless_log_attempt($email, 'admin_link_usado');
+    wp_safe_redirect(pwless_get_redirect_after_login());
+    exit;
+}
+add_action('init', 'pwless_process_admin_generated_user_link', 1);
+
 // Função para processar o login via link único
 function process_passwordless_login() {
     if (isset($_GET['passwordless_login']) && isset($_GET['user']) && isset($_GET['nonce'])) {
         $user_id = intval($_GET['user']);
-        $token = sanitize_text_field($_GET['passwordless_login']);
-        $nonce = sanitize_text_field($_GET['nonce']);
+        $token = sanitize_text_field(wp_unslash($_GET['passwordless_login']));
+        $nonce = sanitize_text_field(wp_unslash($_GET['nonce']));
         $saved_token = get_user_meta($user_id, 'passwordless_login_token', true);
         $token_created = get_user_meta($user_id, 'passwordless_login_token_created', true);
         $expiry_seconds = get_option('pwless_link_expiry', 60) * 60; // Convertendo minutos para segundos
@@ -397,22 +608,9 @@ function process_passwordless_login() {
             wp_check_password($token, $saved_token) && 
             $token_age < $expiry_seconds) {
             
-            // Verificar limites do plugin loggedin
-            if (class_exists('Loggedin')) {
-                $loggedin = new Loggedin();
-                
-                // Verificar se o usuário pode fazer login baseado na configuração
-                $check = $loggedin->validate_block_logic(true, '', '', $user_id);
-                
-                if ($check === false) {
-                    // Se retornou false, significa que a configuração está em BLOCK
-                    // e o usuário atingiu o limite
-                    echo '<p class="error">Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.</p>';
-                    return;
-                }
-                // Se retornou true, pode ser:
-                // 1. Configuração ALLOW (vai deslogar sessões antigas automaticamente)
-                // 2. Configuração BLOCK mas ainda não atingiu o limite
+            if (!pwless_user_can_login_with_loggedin_plugin($user_id)) {
+                echo '<p class="error">Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.</p>';
+                return;
             }
             
             wp_set_auth_cookie($user_id);
@@ -420,14 +618,9 @@ function process_passwordless_login() {
             delete_user_meta($user_id, 'passwordless_login_token_created');
             
             $user = get_user_by('ID', $user_id);
-            pwless_log_attempt($user->user_email, 'login_sucesso');
+            pwless_log_attempt($user ? $user->user_email : 'unknown', 'login_sucesso');
             
-            // Usa a URL de redirecionamento configurada ou a página inicial como fallback
-            $redirect_url = get_option('pwless_redirect_url');
-            if (empty($redirect_url)) {
-                $redirect_url = home_url();
-            }
-            wp_redirect($redirect_url);
+            wp_safe_redirect(pwless_get_redirect_after_login());
             exit;
         } else {
             $user = get_user_by('ID', $user_id);
@@ -877,7 +1070,7 @@ function pwless_log_attempt($email, $status) {
         array(
             'email' => $email,
             'status' => $status,
-            'ip_address' => $_SERVER['REMOTE_ADDR']
+            'ip_address' => isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : ''
         ),
         array('%s', '%s', '%s')
     );
