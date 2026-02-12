@@ -459,6 +459,9 @@ function pwless_render_user_direct_login_card($user) {
             <th>Gerar link</th>
             <td>
                 <button type="submit" name="pwless_generate_user_direct_link" value="1" class="button button-primary">Gerar link de login</button>
+                <?php if ($has_active_link): ?>
+                    <button type="submit" name="pwless_revoke_user_direct_link" value="1" class="button button-secondary" style="margin-left:8px;" onclick="return confirm('Tem certeza que deseja revogar o link atual?');">Revogar link atual</button>
+                <?php endif; ?>
                 <p class="description">Ao clicar no link, o usuário faz login automaticamente no WordPress.</p>
             </td>
         </tr>
@@ -494,12 +497,27 @@ function pwless_handle_generate_user_direct_link($user_id) {
         return;
     }
 
-    if (!isset($_POST['pwless_generate_user_direct_link'])) {
+    $is_generate = isset($_POST['pwless_generate_user_direct_link']);
+    $is_revoke = isset($_POST['pwless_revoke_user_direct_link']);
+    if (!$is_generate && !$is_revoke) {
         return;
     }
 
     $nonce = isset($_POST['pwless_generate_user_direct_link_nonce']) ? sanitize_text_field(wp_unslash($_POST['pwless_generate_user_direct_link_nonce'])) : '';
     if (!wp_verify_nonce($nonce, 'pwless_generate_user_direct_link_' . $user_id)) {
+        return;
+    }
+
+    $target_user = get_user_by('ID', $user_id);
+    $transient_key = pwless_get_admin_generated_link_transient_key(get_current_user_id(), $user_id);
+
+    if ($is_revoke) {
+        delete_user_meta($user_id, 'pwless_admin_generated_login_link');
+        delete_transient($transient_key);
+
+        if ($target_user) {
+            pwless_log_attempt($target_user->user_email, 'admin_link_revogado');
+        }
         return;
     }
 
@@ -527,10 +545,8 @@ function pwless_handle_generate_user_direct_link($user_id) {
         site_url('/')
     );
 
-    $transient_key = pwless_get_admin_generated_link_transient_key(get_current_user_id(), $user_id);
     set_transient($transient_key, array('url' => $generated_url), DAY_IN_SECONDS);
 
-    $target_user = get_user_by('ID', $user_id);
     if ($target_user) {
         pwless_log_attempt($target_user->user_email, 'admin_link_gerado');
     }
