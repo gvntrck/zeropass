@@ -1155,7 +1155,7 @@ function pwless_settings_page()
                         <th scope="row">URL de Login no Reset</th>
                         <td>
                             <input type="url" name="pwless_reset_login_url"
-                                value="<?php echo esc_url(get_option('pwless_reset_login_url', home_url('/area-do-aluno/'))); ?>"
+                                value="<?php echo esc_url(get_option('pwless_reset_login_url', home_url())); ?>"
                                 class="regular-text">
                             <p class="description">URL utilizada no placeholder {login_url} no email enviado (ex: página
                                 contendo o formulário de login).</p>
