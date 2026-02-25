@@ -1,38 +1,9 @@
-# 🐛 Relatório de Bugs — ZeroPass Login v4.1.2
+# 🐛 Relatório de Bugs — ZeroPass Login v4.1.5
 
 **Arquivo:** `zeropass-gvntrck.php`
 **Data:** 25/02/2026
 
 
-
-## 🟢 Bug 3 — URL de login configurável no reset de senha (Resolvido)
-
-**Severidade:** Média
-**Linha:** 324
-**Função:** `pwless_reset_password_form()`
-
-**Problema:**
-A URL de login enviada no email de reset de senha estava hardcoded como `/area-do-aluno/`, em vez de ter uma configuração dinâmica. Além disso, usar isso de fallback engessaria o uso do plugin em outras aplicações.
-
-**Correção aplicada:**
-Foi criada a configuração dinâmica `pwless_reset_login_url` na página de Opções (Aba "Reset de Senha") e a URL de default passou a ser `home_url()`.
-
----
-
-## 🟢 Bug 4 — Versão desatualizada na página "Sobre" (Resolvido)
-
-**Severidade:** Média
-**Linha:** 1204
-**Função:** `pwless_settings_page()`
-
-**Problema:**
-A versão exibida na aba "Sobre" era estática e podia não condizer com o header do plugin.
-
-**Correção aplicada:**
-Feita a leitura dinâmica usando `$plugin_data = get_plugin_data(__FILE__);` na aba "Sobre" e a versão do header foi elevada a **4.1.5**.
-
-
----
 
 ## 🟡 Bug 5 — SQL sem `$wpdb->prepare()` na consulta de logs
 
