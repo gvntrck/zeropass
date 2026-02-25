@@ -12,10 +12,10 @@
 **Função:** `pwless_reset_password_form()`
 
 **Problema:**
-A URL de login enviada no email de reset de senha estava hardcoded como `/area-do-aluno/`, em vez de ter uma configuração dinâmica.
+A URL de login enviada no email de reset de senha estava hardcoded como `/area-do-aluno/`, em vez de ter uma configuração dinâmica. Além disso, usar isso de fallback engessaria o uso do plugin em outras aplicações.
 
 **Correção aplicada:**
-Foi criada a configuração dinâmica `pwless_reset_login_url` na página de Opções (Aba "Reset de Senha").
+Foi criada a configuração dinâmica `pwless_reset_login_url` na página de Opções (Aba "Reset de Senha") e a URL de default passou a ser `home_url()`.
 
 ---
 
@@ -29,7 +29,7 @@ Foi criada a configuração dinâmica `pwless_reset_login_url` na página de Op�
 A versão exibida na aba "Sobre" era estática e podia não condizer com o header do plugin.
 
 **Correção aplicada:**
-Feita a leitura dinâmica usando `$plugin_data = get_plugin_data(__FILE__);` na aba "Sobre" e a versão do header foi elevada a **4.1.4**.
+Feita a leitura dinâmica usando `$plugin_data = get_plugin_data(__FILE__);` na aba "Sobre" e a versão do header foi elevada a **4.1.5**.
 
 
 ---

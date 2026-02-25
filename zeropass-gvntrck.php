@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.1.4
+Version: 4.1.5
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -321,7 +321,7 @@ function pwless_reset_password_form()
                 $new_password = wp_generate_password(12, false);
                 wp_set_password($new_password, $user->ID);
 
-                $login_url = get_option('pwless_reset_login_url', home_url('/area-do-aluno/'));
+                $login_url = get_option('pwless_reset_login_url', home_url());
                 $email_template = get_option('pwless_reset_email_template');
                 $email_content = str_replace(
                     array('{new_password}', '{login_url}'),
