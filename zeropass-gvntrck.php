@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.1.3
+Version: 4.1.4
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -321,7 +321,7 @@ function pwless_reset_password_form()
                 $new_password = wp_generate_password(12, false);
                 wp_set_password($new_password, $user->ID);
 
-                $login_url = home_url('/area-do-aluno/');
+                $login_url = get_option('pwless_reset_login_url', home_url('/area-do-aluno/'));
                 $email_template = get_option('pwless_reset_email_template');
                 $email_content = str_replace(
                     array('{new_password}', '{login_url}'),
@@ -911,6 +911,7 @@ function pwless_register_settings()
     register_setting('pwless_options', 'pwless_reset_button_text');
     register_setting('pwless_options', 'pwless_reset_form_title');
     register_setting('pwless_options', 'pwless_reset_description');
+    register_setting('pwless_options', 'pwless_reset_login_url');
 
     // Novas configurações para o reCAPTCHA
     register_setting('pwless_options', 'pwless_recaptcha_site_key');
@@ -1150,6 +1151,16 @@ function pwless_settings_page()
                                 class="regular-text">
                         </td>
                     </tr>
+                    <tr>
+                        <th scope="row">URL de Login no Reset</th>
+                        <td>
+                            <input type="url" name="pwless_reset_login_url"
+                                value="<?php echo esc_url(get_option('pwless_reset_login_url', home_url('/area-do-aluno/'))); ?>"
+                                class="regular-text">
+                            <p class="description">URL utilizada no placeholder {login_url} no email enviado (ex: página
+                                contendo o formulário de login).</p>
+                        </td>
+                    </tr>
                 </table>
             </div>
 
@@ -1208,7 +1219,13 @@ function pwless_settings_page()
                     <tr>
                         <th scope="row">Versão</th>
                         <td>
-                            <strong>4.0.0</strong>
+                            <?php
+                            if (!function_exists('get_plugin_data')) {
+                                require_once(ABSPATH . 'wp-admin/includes/plugin.php');
+                            }
+                            $plugin_data = get_plugin_data(__FILE__);
+                            echo '<strong>' . esc_html($plugin_data['Version']) . '</strong>';
+                            ?>
                         </td>
                     </tr>
                     <tr>
