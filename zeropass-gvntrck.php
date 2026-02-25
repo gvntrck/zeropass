@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.1.2
+Version: 4.1.3
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -585,7 +585,8 @@ function pwless_render_user_direct_login_card($user)
                 <th>Status do link atual</th>
                 <td>
                     <p id="pwless-no-link-message" style="<?php echo $state['has_active_link'] ? 'display:none;' : ''; ?>">
-                        <em>Nenhum link foi gerado para este usuário ainda.</em></p>
+                        <em>Nenhum link foi gerado para este usuário ainda.</em>
+                    </p>
                     <p><strong>Criado em:</strong> <span
                             id="pwless-created-at"><?php echo esc_html($state['created_at']); ?></span></p>
                     <p><strong>Expira em:</strong> <span
@@ -840,11 +841,18 @@ function process_passwordless_login()
                 return;
             }
 
+            $user = get_user_by('ID', $user_id);
+
+            wp_set_current_user($user_id);
             wp_set_auth_cookie($user_id);
+
+            if ($user) {
+                do_action('wp_login', $user->user_login, $user);
+            }
+
             delete_user_meta($user_id, 'passwordless_login_token');
             delete_user_meta($user_id, 'passwordless_login_token_created');
 
-            $user = get_user_by('ID', $user_id);
             pwless_log_attempt($user ? $user->user_email : 'unknown', 'login_sucesso');
 
             wp_safe_redirect(pwless_get_redirect_after_login());
