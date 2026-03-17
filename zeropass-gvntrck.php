@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.1.5
+Version: 4.1.6
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -809,12 +809,36 @@ function pwless_process_admin_generated_user_link()
     if ($user) {
         do_action('wp_login', $user->user_login, $user);
     }
+    
+    pwless_force_login_tracking($user_id);
 
     pwless_log_attempt($email, 'admin_link_usado');
     wp_safe_redirect(pwless_get_redirect_after_login());
     exit;
 }
 add_action('init', 'pwless_process_admin_generated_user_link', 1);
+
+// Função auxiliar para forçar o registro de login compatível com outros plugins
+function pwless_force_login_tracking($user_id) {
+    if (!$user_id) return;
+    
+    $login_data = array(
+        'ip'         => isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '',
+        'user_agent' => isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '',
+        'time'       => current_time('timestamp')
+    );
+
+    $history = get_user_meta($user_id, '_login_history', true);
+    if (!is_array($history)) {
+        $history = array();
+    }
+
+    array_unshift($history, $login_data);
+    $history = array_slice($history, 0, 50);
+
+    update_user_meta($user_id, '_login_history', $history);
+    update_user_meta($user_id, 'last_login', current_time('mysql'));
+}
 
 // Função para processar o login via link único
 function process_passwordless_login()
@@ -849,6 +873,8 @@ function process_passwordless_login()
             if ($user) {
                 do_action('wp_login', $user->user_login, $user);
             }
+            
+            pwless_force_login_tracking($user_id);
 
             delete_user_meta($user_id, 'passwordless_login_token');
             delete_user_meta($user_id, 'passwordless_login_token_created');
