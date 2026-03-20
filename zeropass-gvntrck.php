@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.1.6
+Version: 4.1.7
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -74,28 +74,13 @@ function passwordless_login_form()
         if (!isset($_POST['pwless_nonce']) || !wp_verify_nonce($_POST['pwless_nonce'], 'pwless_login_action')) {
             $message = '<div class="error">Erro de validação. Por favor, tente novamente.</div>';
         } else {
-            // Verifica o reCAPTCHA se estiver habilitado
-            if (get_option('pwless_enable_recaptcha')) {
-                $recaptcha_response = isset($_POST['g-recaptcha-response']) ? $_POST['g-recaptcha-response'] : '';
-                $recaptcha_secret = get_option('pwless_recaptcha_secret_key');
+            // Verifica o ALTCHA se estiver habilitado
+            if (get_option('pwless_enable_altcha')) {
+                $altcha_payload = isset($_POST['altcha']) ? sanitize_text_field($_POST['altcha']) : '';
 
-                $verify_response = wp_remote_post('https://www.google.com/recaptcha/api/siteverify', array(
-                    'body' => array(
-                        'secret' => $recaptcha_secret,
-                        'response' => $recaptcha_response
-                    )
-                ));
-
-                if (is_wp_error($verify_response) || empty($recaptcha_response)) {
-                    $message = '<div class="error">Por favor, complete o captcha.</div>';
-                    pwless_log_attempt($_POST['user_email'], 'Falha - Captcha inválido');
-                    return display_login_form($message, $email);
-                }
-
-                $response_body = json_decode(wp_remote_retrieve_body($verify_response));
-                if (!$response_body->success) {
-                    $message = '<div class="error">Verificação do captcha falhou. Por favor, tente novamente.</div>';
-                    pwless_log_attempt($_POST['user_email'], 'Falha - Captcha falhou');
+                if (empty($altcha_payload) || !pwless_altcha_verify($altcha_payload)) {
+                    $message = '<div class="error">Verificação anti-spam falhou. Por favor, tente novamente.</div>';
+                    pwless_log_attempt(sanitize_email($_POST['user_email']), 'Falha - ALTCHA inválido');
                     return display_login_form($message, $email);
                 }
             }
@@ -152,8 +137,7 @@ function display_login_form($message = '', $email = '')
 {
     $form_email_label = get_option('pwless_form_email_label', 'Digite seu email:');
     $form_button_text = get_option('pwless_form_button_text', 'Enviar link');
-    $enable_recaptcha = get_option('pwless_enable_recaptcha');
-    $recaptcha_site_key = get_option('pwless_recaptcha_site_key');
+    $enable_altcha = get_option('pwless_enable_altcha');
 
     ob_start();
     ?>
@@ -169,9 +153,9 @@ function display_login_form($message = '', $email = '')
                 <input type="email" name="user_email" id="user_email" value="<?php echo esc_attr($email); ?>" required>
             </div>
 
-            <?php if ($enable_recaptcha && $recaptcha_site_key): ?>
-                <div class="g-recaptcha" data-sitekey="<?php echo esc_attr($recaptcha_site_key); ?>"></div>
-                <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+            <?php if ($enable_altcha): ?>
+                <altcha-widget challengeurl="<?php echo esc_url(admin_url('admin-ajax.php?action=pwless_altcha_challenge')); ?>"></altcha-widget>
+                <script async defer src="https://cdn.jsdelivr.net/npm/altcha/dist/altcha.min.js" type="module"></script>
             <?php endif; ?>
 
             <div class="pwless-form-group">
@@ -237,7 +221,8 @@ function display_login_form($message = '', $email = '')
             background: #ecf7ed;
         }
 
-        .g-recaptcha {
+        altcha-widget {
+            display: block;
             margin-bottom: 15px;
         }
     </style>
@@ -939,10 +924,10 @@ function pwless_register_settings()
     register_setting('pwless_options', 'pwless_reset_description');
     register_setting('pwless_options', 'pwless_reset_login_url');
 
-    // Novas configurações para o reCAPTCHA
-    register_setting('pwless_options', 'pwless_recaptcha_site_key');
-    register_setting('pwless_options', 'pwless_recaptcha_secret_key');
-    register_setting('pwless_options', 'pwless_enable_recaptcha');
+    // Configurações do ALTCHA
+    register_setting('pwless_options', 'pwless_altcha_hmac_key');
+    register_setting('pwless_options', 'pwless_altcha_complexity', 'intval');
+    register_setting('pwless_options', 'pwless_enable_altcha');
 }
 add_action('admin_init', 'pwless_register_settings');
 
@@ -1003,7 +988,7 @@ function pwless_settings_page()
                 <a href="#" class="nav-tab" data-tab="shortcode">Shortcodes</a>
                 <a href="#" class="nav-tab" data-tab="logs">Logs</a>
                 <a href="#" class="nav-tab" data-tab="sobre">Sobre</a>
-                <a href="#" class="nav-tab" data-tab="recaptcha">reCAPTCHA</a>
+                <a href="#" class="nav-tab" data-tab="altcha">ALTCHA</a>
             </div>
 
             <div class="tab-content" id="email">
@@ -1263,31 +1248,34 @@ function pwless_settings_page()
                 </table>
             </div>
 
-            <div class="tab-content" id="recaptcha" style="display: none;">
-                <h2>Configurações do reCAPTCHA</h2>
+            <div class="tab-content" id="altcha" style="display: none;">
+                <h2>Configurações do ALTCHA</h2>
+                <p class="description">O <a href="https://altcha.org" target="_blank">ALTCHA</a> é uma alternativa ao reCAPTCHA que respeita a privacidade dos usuários. Utiliza prova de trabalho (proof-of-work) sem depender de serviços externos.</p>
                 <table class="form-table">
                     <tr>
-                        <th scope="row">Chave do Site do reCAPTCHA</th>
+                        <th scope="row">Chave HMAC</th>
                         <td>
-                            <input type="text" name="pwless_recaptcha_site_key"
-                                value="<?php echo esc_attr(get_option('pwless_recaptcha_site_key')); ?>"
+                            <input type="text" name="pwless_altcha_hmac_key"
+                                value="<?php echo esc_attr(get_option('pwless_altcha_hmac_key')); ?>"
                                 class="regular-text">
+                            <p class="description">Chave secreta usada para assinar os desafios. Use uma string aleatória longa (mínimo 20 caracteres).</p>
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row">Chave Secreta do reCAPTCHA</th>
+                        <th scope="row">Complexidade</th>
                         <td>
-                            <input type="text" name="pwless_recaptcha_secret_key"
-                                value="<?php echo esc_attr(get_option('pwless_recaptcha_secret_key')); ?>"
-                                class="regular-text">
+                            <input type="number" name="pwless_altcha_complexity"
+                                value="<?php echo esc_attr(get_option('pwless_altcha_complexity', 50000)); ?>"
+                                min="1000" max="1000000" class="small-text">
+                            <p class="description">Número máximo para o desafio proof-of-work. Valores maiores = mais seguro, porém mais lento para o navegador. Padrão: 50000.</p>
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row">Habilitar reCAPTCHA</th>
+                        <th scope="row">Habilitar ALTCHA</th>
                         <td>
                             <label>
-                                <input type="checkbox" name="pwless_enable_recaptcha" value="1" <?php checked(1, get_option('pwless_enable_recaptcha'), true); ?>>
-                                Habilitar reCAPTCHA no formulário de login
+                                <input type="checkbox" name="pwless_enable_altcha" value="1" <?php checked(1, get_option('pwless_enable_altcha'), true); ?>>
+                                Habilitar ALTCHA no formulário de login
                             </label>
                         </td>
                     </tr>
@@ -1386,6 +1374,63 @@ function pwless_log_attempt($email, $status)
         ),
         array('%s', '%s', '%s')
     );
+}
+
+// Gera o desafio ALTCHA via AJAX
+function pwless_altcha_generate_challenge()
+{
+    $hmac_key = get_option('pwless_altcha_hmac_key', '');
+    if (empty($hmac_key)) {
+        wp_send_json_error(array('error' => 'ALTCHA não configurado.'));
+    }
+
+    $max_number = intval(get_option('pwless_altcha_complexity', 50000));
+    if ($max_number < 1000) {
+        $max_number = 50000;
+    }
+
+    $salt = bin2hex(random_bytes(12));
+    $secret_number = random_int(0, $max_number);
+    $algorithm = 'SHA-256';
+
+    $challenge = hash('sha256', $salt . $secret_number);
+    $signature = hash_hmac('sha256', $challenge, $hmac_key);
+
+    wp_send_json(array(
+        'algorithm' => $algorithm,
+        'challenge' => $challenge,
+        'maxnumber' => $max_number,
+        'salt'      => $salt,
+        'signature' => $signature,
+    ));
+}
+add_action('wp_ajax_pwless_altcha_challenge', 'pwless_altcha_generate_challenge');
+add_action('wp_ajax_nopriv_pwless_altcha_challenge', 'pwless_altcha_generate_challenge');
+
+// Verifica o payload ALTCHA enviado pelo formulário
+function pwless_altcha_verify($payload_base64)
+{
+    $hmac_key = get_option('pwless_altcha_hmac_key', '');
+    if (empty($hmac_key) || empty($payload_base64)) {
+        return false;
+    }
+
+    $payload = json_decode(base64_decode($payload_base64), true);
+    if (!is_array($payload) || !isset($payload['algorithm'], $payload['challenge'], $payload['number'], $payload['salt'], $payload['signature'])) {
+        return false;
+    }
+
+    $expected_challenge = hash('sha256', $payload['salt'] . $payload['number']);
+    if (!hash_equals($expected_challenge, $payload['challenge'])) {
+        return false;
+    }
+
+    $expected_signature = hash_hmac('sha256', $payload['challenge'], $hmac_key);
+    if (!hash_equals($expected_signature, $payload['signature'])) {
+        return false;
+    }
+
+    return true;
 }
 
 ?>
