@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.1.9
+Version: 4.1.10
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -11,7 +11,7 @@ Text Domain: zeropass-login
 */
 
 if (!defined('PWLESS_PLUGIN_VERSION')) {
-    define('PWLESS_PLUGIN_VERSION', '4.1.9');
+    define('PWLESS_PLUGIN_VERSION', '4.1.10');
 }
 
 // Função para exibir o formulário de login sem senha
@@ -99,6 +99,7 @@ function passwordless_login_form()
                     $token = wp_generate_password(20, false);
                     $token_hash = wp_hash_password($token);
                     $token_created = time();
+                    pwless_track_superseded_passwordless_token($user->ID);
                     update_user_meta($user->ID, 'passwordless_login_token', $token_hash);
                     update_user_meta($user->ID, 'passwordless_login_token_created', $token_created);
 
@@ -830,6 +831,31 @@ function pwless_force_login_tracking($user_id) {
 }
 
 // Função para processar o login via link único
+function pwless_track_superseded_passwordless_token($user_id)
+{
+    $active_token = get_user_meta($user_id, 'passwordless_login_token', true);
+
+    if (empty($active_token)) {
+        delete_user_meta($user_id, 'passwordless_login_previous_token');
+        return;
+    }
+
+    update_user_meta($user_id, 'passwordless_login_previous_token', $active_token);
+}
+
+function pwless_mark_passwordless_token_as_used($user_id)
+{
+    $active_token = get_user_meta($user_id, 'passwordless_login_token', true);
+
+    if (!empty($active_token)) {
+        update_user_meta($user_id, 'passwordless_login_last_used_token', $active_token);
+    }
+
+    delete_user_meta($user_id, 'passwordless_login_token');
+    delete_user_meta($user_id, 'passwordless_login_token_created');
+    delete_user_meta($user_id, 'passwordless_login_previous_token');
+}
+
 function pwless_validate_passwordless_login($user_id, $token, $nonce)
 {
     $result = array(
@@ -868,6 +894,20 @@ function pwless_validate_passwordless_login($user_id, $token, $nonce)
 
     $saved_token = get_user_meta($user_id, 'passwordless_login_token', true);
     $token_created = intval(get_user_meta($user_id, 'passwordless_login_token_created', true));
+    $previous_token = get_user_meta($user_id, 'passwordless_login_previous_token', true);
+    $last_used_token = get_user_meta($user_id, 'passwordless_login_last_used_token', true);
+
+    if (!empty($last_used_token) && wp_check_password($token, $last_used_token)) {
+        $result['log_status'] = 'Link jÃ¡ utilizado';
+        $result['message'] = 'Este link jÃ¡ foi utilizado. Solicite um novo link de acesso.';
+        return $result;
+    }
+
+    if (!empty($previous_token) && wp_check_password($token, $previous_token)) {
+        $result['log_status'] = 'Link antigo: existe link mais recente';
+        $result['message'] = 'Este link Ã© antigo e jÃ¡ existe um link mais recente para este usuÃ¡rio. Utilize o link mais recente ou solicite outro link de acesso.';
+        return $result;
+    }
 
     if (empty($saved_token)) {
         $result['log_status'] = 'Link inválido: sem token ativo';
@@ -991,8 +1031,7 @@ function pwless_process_passwordless_login()
 
     pwless_force_login_tracking($user_id);
 
-    delete_user_meta($user_id, 'passwordless_login_token');
-    delete_user_meta($user_id, 'passwordless_login_token_created');
+    pwless_mark_passwordless_token_as_used($user_id);
 
     pwless_log_attempt($user ? $user->user_email : 'unknown', 'login_sucesso');
 
