@@ -3,15 +3,34 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.1.11
+Version: 4.1.12
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
 Text Domain: zeropass-login
 */
 
+
+
+require 'plugin-update-checker/plugin-update-checker.php';
+use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
+
+$myUpdateChecker = PucFactory::buildUpdateChecker(
+    'https://github.com/gvntrck/zeropass/',
+    __FILE__,
+    'zeropass-gvntrck'
+);
+
+//Set the branch that contains the stable release.
+$myUpdateChecker->setBranch('main');
+
+//Optional: If you're using a private repository, specify the access token like this:
+$myUpdateChecker->setAuthentication('your-token-here');
+
+
+
 if (!defined('PWLESS_PLUGIN_VERSION')) {
-    define('PWLESS_PLUGIN_VERSION', '4.1.11');
+    define('PWLESS_PLUGIN_VERSION', '4.1.12');
 }
 
 // Função para exibir o formulário de login sem senha
@@ -159,7 +178,8 @@ function display_login_form($message = '', $email = '')
             </div>
 
             <?php if ($enable_altcha): ?>
-                <altcha-widget challengeurl="<?php echo esc_url(admin_url('admin-ajax.php?action=pwless_altcha_challenge')); ?>"></altcha-widget>
+                <altcha-widget
+                    challengeurl="<?php echo esc_url(admin_url('admin-ajax.php?action=pwless_altcha_challenge')); ?>"></altcha-widget>
                 <script async defer src="https://cdn.jsdelivr.net/npm/altcha/dist/altcha.min.js" type="module"></script>
             <?php endif; ?>
 
@@ -799,7 +819,7 @@ function pwless_process_admin_generated_user_link()
     if ($user) {
         do_action('wp_login', $user->user_login, $user);
     }
-    
+
     pwless_force_login_tracking($user_id);
 
     pwless_log_attempt($email, 'admin_link_usado');
@@ -809,13 +829,15 @@ function pwless_process_admin_generated_user_link()
 add_action('init', 'pwless_process_admin_generated_user_link', 1);
 
 // Função auxiliar para forçar o registro de login compatível com outros plugins
-function pwless_force_login_tracking($user_id) {
-    if (!$user_id) return;
-    
+function pwless_force_login_tracking($user_id)
+{
+    if (!$user_id)
+        return;
+
     $login_data = array(
-        'ip'         => isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '',
+        'ip' => isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '',
         'user_agent' => isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_USER_AGENT'])) : '',
-        'time'       => current_time('timestamp')
+        'time' => current_time('timestamp')
     );
 
     $history = get_user_meta($user_id, '_login_history', true);
@@ -961,7 +983,7 @@ function pwless_process_passwordless_login_legacy()
         if (!$validation['valid']) {
             $user = $validation['user'];
 
-        // Verifica se o nonce é válido e o token não expirou
+            // Verifica se o nonce é válido e o token não expirou
             pwless_log_attempt($user ? $user->user_email : 'unknown', $validation['log_status']);
             echo '<p class="error">' . esc_html($validation['message']) . '</p>';
             return;
@@ -970,30 +992,30 @@ function pwless_process_passwordless_login_legacy()
 
 
 
-            if (!pwless_user_can_login_with_loggedin_plugin($user_id)) {
-                echo '<p class="error">Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.</p>';
-                return;
-            }
+        if (!pwless_user_can_login_with_loggedin_plugin($user_id)) {
+            echo '<p class="error">Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.</p>';
+            return;
+        }
 
-            wp_set_current_user($user_id);
-            wp_set_auth_cookie($user_id);
+        wp_set_current_user($user_id);
+        wp_set_auth_cookie($user_id);
 
-            if ($user) {
-                do_action('wp_login', $user->user_login, $user);
-            }
-            
-            pwless_force_login_tracking($user_id);
+        if ($user) {
+            do_action('wp_login', $user->user_login, $user);
+        }
 
-            delete_user_meta($user_id, 'passwordless_login_token');
-            delete_user_meta($user_id, 'passwordless_login_token_created');
+        pwless_force_login_tracking($user_id);
 
-            pwless_log_attempt($user ? $user->user_email : 'unknown', 'login_sucesso');
+        delete_user_meta($user_id, 'passwordless_login_token');
+        delete_user_meta($user_id, 'passwordless_login_token_created');
 
-            wp_safe_redirect(pwless_get_redirect_after_login());
-            exit;
+        pwless_log_attempt($user ? $user->user_email : 'unknown', 'login_sucesso');
+
+        wp_safe_redirect(pwless_get_redirect_after_login());
+        exit;
 
 
-            echo '<p class="error">Link inválido ou expirado. Por favor, solicite um novo link de acesso.</p>';
+        echo '<p class="error">Link inválido ou expirado. Por favor, solicite um novo link de acesso.</p>';
 
     }
 }
@@ -1417,24 +1439,27 @@ function pwless_settings_page()
 
             <div class="tab-content" id="altcha" style="display: none;">
                 <h2>Configurações do ALTCHA</h2>
-                <p class="description">O <a href="https://altcha.org" target="_blank">ALTCHA</a> é uma alternativa ao reCAPTCHA que respeita a privacidade dos usuários. Utiliza prova de trabalho (proof-of-work) sem depender de serviços externos.</p>
+                <p class="description">O <a href="https://altcha.org" target="_blank">ALTCHA</a> é uma alternativa ao
+                    reCAPTCHA que respeita a privacidade dos usuários. Utiliza prova de trabalho (proof-of-work) sem
+                    depender de serviços externos.</p>
                 <table class="form-table">
                     <tr>
                         <th scope="row">Chave HMAC</th>
                         <td>
                             <input type="text" name="pwless_altcha_hmac_key"
-                                value="<?php echo esc_attr(get_option('pwless_altcha_hmac_key')); ?>"
-                                class="regular-text">
-                            <p class="description">Chave secreta usada para assinar os desafios. Use uma string aleatória longa (mínimo 20 caracteres).</p>
+                                value="<?php echo esc_attr(get_option('pwless_altcha_hmac_key')); ?>" class="regular-text">
+                            <p class="description">Chave secreta usada para assinar os desafios. Use uma string aleatória
+                                longa (mínimo 20 caracteres).</p>
                         </td>
                     </tr>
                     <tr>
                         <th scope="row">Complexidade</th>
                         <td>
                             <input type="number" name="pwless_altcha_complexity"
-                                value="<?php echo esc_attr(get_option('pwless_altcha_complexity', 50000)); ?>"
-                                min="1000" max="1000000" class="small-text">
-                            <p class="description">Número máximo para o desafio proof-of-work. Valores maiores = mais seguro, porém mais lento para o navegador. Padrão: 50000.</p>
+                                value="<?php echo esc_attr(get_option('pwless_altcha_complexity', 50000)); ?>" min="1000"
+                                max="1000000" class="small-text">
+                            <p class="description">Número máximo para o desafio proof-of-work. Valores maiores = mais
+                                seguro, porém mais lento para o navegador. Padrão: 50000.</p>
                         </td>
                     </tr>
                     <tr>
@@ -1577,7 +1602,7 @@ function pwless_altcha_generate_challenge()
         'algorithm' => $algorithm,
         'challenge' => $challenge,
         'maxnumber' => $max_number,
-        'salt'      => $salt,
+        'salt' => $salt,
         'signature' => $signature,
     ));
 }
@@ -1609,5 +1634,9 @@ function pwless_altcha_verify($payload_base64)
 
     return true;
 }
+
+
+
+
 
 ?>
