@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.1.10
+Version: 4.1.11
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -11,7 +11,7 @@ Text Domain: zeropass-login
 */
 
 if (!defined('PWLESS_PLUGIN_VERSION')) {
-    define('PWLESS_PLUGIN_VERSION', '4.1.10');
+    define('PWLESS_PLUGIN_VERSION', '4.1.11');
 }
 
 // Função para exibir o formulário de login sem senha
@@ -898,14 +898,14 @@ function pwless_validate_passwordless_login($user_id, $token, $nonce)
     $last_used_token = get_user_meta($user_id, 'passwordless_login_last_used_token', true);
 
     if (!empty($last_used_token) && wp_check_password($token, $last_used_token)) {
-        $result['log_status'] = 'Link jÃ¡ utilizado';
-        $result['message'] = 'Este link jÃ¡ foi utilizado. Solicite um novo link de acesso.';
+        $result['log_status'] = 'Link já utilizado';
+        $result['message'] = 'Este link já foi utilizado. Solicite um novo link de acesso.';
         return $result;
     }
 
     if (!empty($previous_token) && wp_check_password($token, $previous_token)) {
         $result['log_status'] = 'Link antigo: existe link mais recente';
-        $result['message'] = 'Este link Ã© antigo e jÃ¡ existe um link mais recente para este usuÃ¡rio. Utilize o link mais recente ou solicite outro link de acesso.';
+        $result['message'] = 'Este link é antigo e já existe um link mais recente para este usuário. Utilize o link mais recente ou solicite outro link de acesso.';
         return $result;
     }
 
