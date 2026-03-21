@@ -3,12 +3,16 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.1.7
+Version: 4.1.9
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
 Text Domain: zeropass-login
 */
+
+if (!defined('PWLESS_PLUGIN_VERSION')) {
+    define('PWLESS_PLUGIN_VERSION', '4.1.9');
+}
 
 // Função para exibir o formulário de login sem senha
 function passwordless_login_form()
@@ -826,31 +830,110 @@ function pwless_force_login_tracking($user_id) {
 }
 
 // Função para processar o login via link único
-function process_passwordless_login()
+function pwless_validate_passwordless_login($user_id, $token, $nonce)
+{
+    $result = array(
+        'valid' => false,
+        'user' => null,
+        'log_status' => 'Link inválido',
+        'message' => 'Link inválido. Solicite um novo link de acesso.',
+    );
+
+    if ($user_id <= 0) {
+        $result['log_status'] = 'Link inválido: usuário inválido';
+        $result['message'] = 'Link inválido: usuário não identificado.';
+        return $result;
+    }
+
+    $user = get_user_by('ID', $user_id);
+    if (!$user) {
+        $result['log_status'] = 'Link inválido: usuário não encontrado';
+        $result['message'] = 'Link inválido: usuário não encontrado.';
+        return $result;
+    }
+
+    $result['user'] = $user;
+
+    if ($token === '') {
+        $result['log_status'] = 'Link inválido: token ausente';
+        $result['message'] = 'Link inválido: token de acesso ausente.';
+        return $result;
+    }
+
+    if ($nonce === '') {
+        $result['log_status'] = 'Link inválido: nonce ausente';
+        $result['message'] = 'Link inválido: assinatura de segurança ausente.';
+        return $result;
+    }
+
+    $saved_token = get_user_meta($user_id, 'passwordless_login_token', true);
+    $token_created = intval(get_user_meta($user_id, 'passwordless_login_token_created', true));
+
+    if (empty($saved_token)) {
+        $result['log_status'] = 'Link inválido: sem token ativo';
+        $result['message'] = 'Este link não é mais válido porque não existe um token ativo para este usuário.';
+        return $result;
+    }
+
+    if ($token_created <= 0) {
+        $result['log_status'] = 'Link inválido: sem data do token';
+        $result['message'] = 'Link inválido: data de criação do token ausente ou inválida.';
+        return $result;
+    }
+
+    if (!wp_verify_nonce($nonce, 'passwordless_login_' . $user_id . '_' . $token_created)) {
+        $result['log_status'] = 'Link inválido: nonce inválido';
+        $result['message'] = 'Link inválido: assinatura de segurança inválida.';
+        return $result;
+    }
+
+    if (!wp_check_password($token, $saved_token)) {
+        $result['log_status'] = 'Link inválido: token divergente';
+        $result['message'] = 'Este link não corresponde ao token mais recente gerado para este usuário.';
+        return $result;
+    }
+
+    $token_age = time() - $token_created;
+    if ($token_age < 0) {
+        $result['log_status'] = 'Link inválido: data do token inválida';
+        $result['message'] = 'Link inválido: a data de criação do token é inválida.';
+        return $result;
+    }
+
+    $expiry_seconds = max(1, intval(get_option('pwless_link_expiry', 60))) * MINUTE_IN_SECONDS;
+    if ($token_age >= $expiry_seconds) {
+        $result['log_status'] = 'Link expirado';
+        $result['message'] = 'Link expirado. Por favor, solicite um novo link de acesso.';
+        return $result;
+    }
+
+    $result['valid'] = true;
+    return $result;
+}
+
+function pwless_process_passwordless_login_legacy()
 {
     if (isset($_GET['passwordless_login']) && isset($_GET['user']) && isset($_GET['nonce'])) {
         $user_id = intval($_GET['user']);
         $token = sanitize_text_field(wp_unslash($_GET['passwordless_login']));
         $nonce = sanitize_text_field(wp_unslash($_GET['nonce']));
-        $saved_token = get_user_meta($user_id, 'passwordless_login_token', true);
-        $token_created = get_user_meta($user_id, 'passwordless_login_token_created', true);
-        $expiry_seconds = get_option('pwless_link_expiry', 60) * 60; // Convertendo minutos para segundos
+        $validation = pwless_validate_passwordless_login($user_id, $token, $nonce);
+        if (!$validation['valid']) {
+            $user = $validation['user'];
 
         // Verifica se o nonce é válido e o token não expirou
-        $token_age = time() - intval($token_created);
-        if (
-            wp_verify_nonce($nonce, 'passwordless_login_' . $user_id . '_' . $token_created) &&
-            $token &&
-            wp_check_password($token, $saved_token) &&
-            $token_age < $expiry_seconds
-        ) {
+            pwless_log_attempt($user ? $user->user_email : 'unknown', $validation['log_status']);
+            echo '<p class="error">' . esc_html($validation['message']) . '</p>';
+            return;
+        }
+        $user = $validation['user'];
+
+
 
             if (!pwless_user_can_login_with_loggedin_plugin($user_id)) {
                 echo '<p class="error">Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.</p>';
                 return;
             }
-
-            $user = get_user_by('ID', $user_id);
 
             wp_set_current_user($user_id);
             wp_set_auth_cookie($user_id);
@@ -868,14 +951,59 @@ function process_passwordless_login()
 
             wp_safe_redirect(pwless_get_redirect_after_login());
             exit;
-        } else {
-            $user = get_user_by('ID', $user_id);
-            pwless_log_attempt($user ? $user->user_email : 'unknown', 'link_invalido_ou_expirado');
+
+
             echo '<p class="error">Link inválido ou expirado. Por favor, solicite um novo link de acesso.</p>';
-        }
+
     }
 }
-add_action('init', 'process_passwordless_login');
+function pwless_process_passwordless_login()
+{
+    if (!isset($_GET['passwordless_login']) || !isset($_GET['user']) || !isset($_GET['nonce'])) {
+        return;
+    }
+
+    $user_id = intval($_GET['user']);
+    $token = sanitize_text_field(wp_unslash($_GET['passwordless_login']));
+    $nonce = sanitize_text_field(wp_unslash($_GET['nonce']));
+    $validation = pwless_validate_passwordless_login($user_id, $token, $nonce);
+
+    if (!$validation['valid']) {
+        $user = $validation['user'];
+        pwless_log_attempt($user ? $user->user_email : 'unknown', $validation['log_status']);
+        echo '<p class="error">' . esc_html($validation['message']) . '</p>';
+        return;
+    }
+
+    $user = $validation['user'];
+
+    if (!pwless_user_can_login_with_loggedin_plugin($user_id)) {
+        echo '<p class="error">Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.</p>';
+        return;
+    }
+
+    wp_set_current_user($user_id);
+    wp_set_auth_cookie($user_id);
+
+    if ($user) {
+        do_action('wp_login', $user->user_login, $user);
+    }
+
+    pwless_force_login_tracking($user_id);
+
+    delete_user_meta($user_id, 'passwordless_login_token');
+    delete_user_meta($user_id, 'passwordless_login_token_created');
+
+    pwless_log_attempt($user ? $user->user_email : 'unknown', 'login_sucesso');
+
+    wp_safe_redirect(pwless_get_redirect_after_login());
+    exit;
+}
+function process_passwordless_login()
+{
+    return pwless_process_passwordless_login();
+}
+add_action('init', 'pwless_process_passwordless_login');
 
 // Adiciona menu na área administrativa
 function pwless_admin_menu()
@@ -1336,24 +1464,34 @@ function pwless_create_log_table()
 {
     global $wpdb;
     $table_name = $wpdb->prefix . 'pwless_logs';
+    $charset_collate = $wpdb->get_charset_collate();
 
-    if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") != $table_name) {
-        $charset_collate = $wpdb->get_charset_collate();
+    $sql = "CREATE TABLE $table_name (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        email varchar(100) NOT NULL,
+        status varchar(191) NOT NULL,
+        ip_address varchar(45) NOT NULL,
+        created_at datetime DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY  (id)
+    ) $charset_collate;";
 
-        $sql = "CREATE TABLE $table_name (
-            id bigint(20) NOT NULL AUTO_INCREMENT,
-            email varchar(100) NOT NULL,
-            status varchar(50) NOT NULL,
-            ip_address varchar(45) NOT NULL,
-            created_at datetime DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY  (id)
-        ) $charset_collate;";
-
-        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-        dbDelta($sql);
-    }
+    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+    dbDelta($sql);
 }
 register_activation_hook(__FILE__, 'pwless_create_log_table');
+
+function pwless_maybe_upgrade_plugin()
+{
+    $installed_version = get_option('pwless_plugin_version', '0.0.0');
+
+    if (version_compare($installed_version, PWLESS_PLUGIN_VERSION, '>=')) {
+        return;
+    }
+
+    pwless_create_log_table();
+    update_option('pwless_plugin_version', PWLESS_PLUGIN_VERSION);
+}
+add_action('plugins_loaded', 'pwless_maybe_upgrade_plugin');
 
 // Função para registrar logs
 function pwless_log_attempt($email, $status)
@@ -1369,7 +1507,7 @@ function pwless_log_attempt($email, $status)
         $table_name,
         array(
             'email' => $email,
-            'status' => $status,
+            'status' => sanitize_text_field($status),
             'ip_address' => isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : ''
         ),
         array('%s', '%s', '%s')
