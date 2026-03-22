@@ -449,6 +449,7 @@ function pwless_get_admin_generated_link_data($user_id)
 
     return array(
         'token_hash' => isset($meta['token_hash']) ? $meta['token_hash'] : '',
+        'token_value' => (isset($meta['token_value']) && is_string($meta['token_value'])) ? $meta['token_value'] : '',
         'created_at' => isset($meta['created_at']) ? intval($meta['created_at']) : 0,
         'expires_at' => isset($meta['expires_at']) ? intval($meta['expires_at']) : 0,
         'max_uses' => isset($meta['max_uses']) ? intval($meta['max_uses']) : 0,
@@ -458,13 +459,93 @@ function pwless_get_admin_generated_link_data($user_id)
     );
 }
 
-function pwless_get_admin_generated_link_state($user_id)
+function pwless_store_admin_generated_link_token($token)
+{
+    $token = is_string($token) ? $token : '';
+    if ($token === '') {
+        return '';
+    }
+
+    if (function_exists('openssl_encrypt')) {
+        $key = hash('sha256', wp_salt('auth') . wp_salt('secure_auth'), true);
+        $iv = substr(wp_generate_password(32, true, true), 0, 16);
+        $encrypted = openssl_encrypt($token, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
+
+        if (is_string($encrypted)) {
+            return 'enc:' . base64_encode($iv . $encrypted);
+        }
+    }
+
+    return 'plain:' . base64_encode($token);
+}
+
+function pwless_restore_admin_generated_link_token($stored_value)
+{
+    if (!is_string($stored_value) || $stored_value === '') {
+        return '';
+    }
+
+    if (strpos($stored_value, 'enc:') === 0 && function_exists('openssl_decrypt')) {
+        $decoded = base64_decode(substr($stored_value, 4), true);
+        if ($decoded !== false && strlen($decoded) > 16) {
+            $iv = substr($decoded, 0, 16);
+            $encrypted = substr($decoded, 16);
+            $key = hash('sha256', wp_salt('auth') . wp_salt('secure_auth'), true);
+            $token = openssl_decrypt($encrypted, 'AES-256-CBC', $key, OPENSSL_RAW_DATA, $iv);
+
+            if (is_string($token)) {
+                return $token;
+            }
+        }
+    }
+
+    if (strpos($stored_value, 'plain:') === 0) {
+        $decoded = base64_decode(substr($stored_value, 6), true);
+        return is_string($decoded) ? $decoded : '';
+    }
+
+    return '';
+}
+
+function pwless_get_admin_generated_link_url($user_id, $admin_id = 0)
+{
+    $data = pwless_get_admin_generated_link_data($user_id);
+    if (empty($data['token_hash'])) {
+        return '';
+    }
+
+    $token = pwless_restore_admin_generated_link_token($data['token_value']);
+    if ($token !== '') {
+        return add_query_arg(
+            array(
+                'pwless_admin_login' => $token,
+                'user' => $user_id,
+            ),
+            site_url('/')
+        );
+    }
+
+    $admin_id = $admin_id ? intval($admin_id) : get_current_user_id();
+    if ($admin_id > 0) {
+        $transient_key = pwless_get_admin_generated_link_transient_key($admin_id, $user_id);
+        $generated = get_transient($transient_key);
+        if (is_array($generated) && !empty($generated['url'])) {
+            return $generated['url'];
+        }
+    }
+
+    return '';
+}
+
+function pwless_get_admin_generated_link_state($user_id, $admin_id = 0)
 {
     $data = pwless_get_admin_generated_link_data($user_id);
     $has_active_link = !empty($data['token_hash']);
+    $generated_url = $has_active_link ? pwless_get_admin_generated_link_url($user_id, $admin_id) : '';
 
     return array(
         'has_active_link' => $has_active_link,
+        'generated_url' => $generated_url,
         'created_at' => ($has_active_link && $data['created_at']) ? date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $data['created_at']) : '-',
         'expires_at' => $has_active_link ? ($data['expires_at'] ? date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $data['expires_at']) : 'Nunca') : '-',
         'uses_info' => $has_active_link ? ($data['max_uses'] > 0 ? ($data['uses'] . ' / ' . $data['max_uses']) : ($data['uses'] . ' / Ilimitado')) : '-',
@@ -484,6 +565,7 @@ function pwless_admin_generate_user_direct_link($user_id, $expiry_minutes, $max_
 
     update_user_meta($user_id, 'pwless_admin_generated_login_link', array(
         'token_hash' => wp_hash_password($token),
+        'token_value' => pwless_store_admin_generated_link_token($token),
         'created_at' => $created_at,
         'expires_at' => $expires_at,
         'max_uses' => $max_uses,
@@ -510,7 +592,7 @@ function pwless_admin_generate_user_direct_link($user_id, $expiry_minutes, $max_
     return array(
         'message' => 'Link gerado com sucesso.',
         'generated_url' => $generated_url,
-        'state' => pwless_get_admin_generated_link_state($user_id),
+        'state' => pwless_get_admin_generated_link_state($user_id, $admin_id),
     );
 }
 
@@ -530,8 +612,365 @@ function pwless_admin_revoke_user_direct_link($user_id, $admin_id = 0)
     return array(
         'message' => 'Link revogado com sucesso.',
         'generated_url' => '',
-        'state' => pwless_get_admin_generated_link_state($user_id),
+        'state' => pwless_get_admin_generated_link_state($user_id, $admin_id),
     );
+}
+
+function pwless_render_admin_generated_link_assets()
+{
+    static $rendered = false;
+    if ($rendered) {
+        return;
+    }
+
+    $rendered = true;
+    ?>
+    <style>
+        .pwless-admin-link-inline-fields {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .pwless-admin-link-inline-fields label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-weight: 600;
+        }
+
+        .pwless-admin-link-actions-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .pwless-admin-link-notice {
+            margin: 0 0 10px;
+        }
+
+        .pwless-admin-generated-link {
+            width: 100%;
+            max-width: 720px;
+        }
+
+        .pwless-generated-link-empty {
+            margin: 4px 0 0;
+            color: #646970;
+            font-style: italic;
+        }
+
+        .pwless-login-links-table .column-user {
+            min-width: 180px;
+        }
+
+        .pwless-login-links-table .column-email {
+            min-width: 220px;
+        }
+
+        .pwless-login-links-table .column-link {
+            min-width: 320px;
+        }
+
+        .pwless-login-links-table .column-actions {
+            min-width: 270px;
+        }
+
+        .pwless-login-links-table .pwless-admin-generated-link {
+            max-width: none;
+        }
+
+        .pwless-login-links-table .pwless-admin-link-inline-fields {
+            margin-bottom: 10px;
+        }
+
+        .pwless-login-links-table .pwless-admin-link-inline-fields input {
+            max-width: 90px;
+        }
+
+        .pwless-admin-link-user-name {
+            font-weight: 600;
+        }
+    </style>
+    <script>
+        (function ($) {
+            function getEmptyLinkMessage(hasActiveLink) {
+                return hasActiveLink
+                    ? 'Link indisponível para cópia nesta sessão. Gere novamente para obter o URL completo.'
+                    : 'Nenhum link ativo para este usuário.';
+            }
+
+            function setLoading($manager, isLoading) {
+                $manager.find('.pwless-admin-link-action').prop('disabled', isLoading);
+            }
+
+            function showNotice($manager, message, isError) {
+                var $notice = $manager.find('.pwless-admin-link-notice');
+                if (!$notice.length) {
+                    return;
+                }
+
+                $notice.removeClass('notice-success notice-error').addClass(isError ? 'notice-error' : 'notice-success');
+                $notice.find('p').text(message);
+                $notice.show();
+            }
+
+            function updateState($manager, payload) {
+                if (!payload || !payload.state) {
+                    return;
+                }
+
+                var state = payload.state;
+                var hasActiveLink = !!state.has_active_link;
+                var generatedUrl = '';
+                var hasGeneratedUrl = payload && Object.prototype.hasOwnProperty.call(payload, 'generated_url');
+
+                if (hasGeneratedUrl) {
+                    generatedUrl = payload.generated_url || '';
+                } else if (state.generated_url) {
+                    generatedUrl = state.generated_url;
+                }
+
+                $manager.find('.pwless-created-at').text(state.created_at || '-');
+                $manager.find('.pwless-expires-at').text(state.expires_at || '-');
+                $manager.find('.pwless-uses-info').text(state.uses_info || '-');
+                $manager.find('.pwless-last-used').text(state.last_used || '-');
+                $manager.find('.pwless-admin-link-expiry-minutes').val(state.default_expiry || 0);
+                $manager.find('.pwless-admin-link-max-uses').val(state.default_max_uses || 0);
+
+                if (hasActiveLink) {
+                    $manager.find('.pwless-no-link-message').hide();
+                    $manager.find('.pwless-revoke-link-btn').show();
+                } else {
+                    $manager.find('.pwless-no-link-message').show();
+                    $manager.find('.pwless-revoke-link-btn').hide();
+                }
+
+                if (generatedUrl) {
+                    $manager.find('.pwless-admin-generated-link').val(generatedUrl).show();
+                    $manager.find('.pwless-generated-link-help').show();
+                    $manager.find('.pwless-generated-link-empty').hide();
+                    $manager.find('.pwless-copy-link-btn').show();
+                } else {
+                    $manager.find('.pwless-admin-generated-link').val('').hide();
+                    $manager.find('.pwless-generated-link-help').hide();
+                    $manager.find('.pwless-generated-link-empty').text(getEmptyLinkMessage(hasActiveLink)).show();
+                    $manager.find('.pwless-copy-link-btn').hide();
+                }
+            }
+
+            function runOperation($manager, operation) {
+                setLoading($manager, true);
+                $manager.find('.pwless-admin-link-notice').hide();
+
+                $.post($manager.data('ajax-url'), {
+                    action: 'pwless_manage_user_direct_link',
+                    security: $manager.data('ajax-nonce'),
+                    operation: operation,
+                    user_id: $manager.data('user-id'),
+                    expiry_minutes: $manager.find('.pwless-admin-link-expiry-minutes').val(),
+                    max_uses: $manager.find('.pwless-admin-link-max-uses').val()
+                }).done(function (response) {
+                    if (!response || !response.success) {
+                        showNotice($manager, response && response.data && response.data.message ? response.data.message : 'Erro ao processar a solicitação.', true);
+                        return;
+                    }
+
+                    updateState($manager, response.data);
+                    showNotice($manager, response.data && response.data.message ? response.data.message : 'Ação concluída.', false);
+                }).fail(function () {
+                    showNotice($manager, 'Erro de conexão ao processar a solicitação.', true);
+                }).always(function () {
+                    setLoading($manager, false);
+                });
+            }
+
+            $(document).on('click', '.pwless-generate-link-btn', function (e) {
+                e.preventDefault();
+                runOperation($(this).closest('.pwless-admin-link-manager'), 'generate');
+            });
+
+            $(document).on('click', '.pwless-revoke-link-btn', function (e) {
+                e.preventDefault();
+
+                if (!window.confirm('Tem certeza que deseja revogar o link atual?')) {
+                    return;
+                }
+
+                runOperation($(this).closest('.pwless-admin-link-manager'), 'revoke');
+            });
+
+            $(document).on('click', '.pwless-copy-link-btn', function (e) {
+                e.preventDefault();
+
+                var $manager = $(this).closest('.pwless-admin-link-manager');
+                var $input = $manager.find('.pwless-admin-generated-link');
+                var value = $input.val();
+
+                if (!value) {
+                    return;
+                }
+
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(value).then(function () {
+                        showNotice($manager, 'Link copiado para a área de transferência.', false);
+                    }, function () {
+                        showNotice($manager, 'Não foi possível copiar o link automaticamente.', true);
+                    });
+                    return;
+                }
+
+                $input.trigger('focus').trigger('select');
+
+                try {
+                    document.execCommand('copy');
+                    showNotice($manager, 'Link copiado para a área de transferência.', false);
+                } catch (err) {
+                    showNotice($manager, 'Não foi possível copiar o link automaticamente.', true);
+                }
+            });
+        })(jQuery);
+    </script>
+    <?php
+}
+
+function pwless_get_admin_generated_link_rows($admin_id = 0)
+{
+    $admin_id = $admin_id ? intval($admin_id) : get_current_user_id();
+    $users = get_users(array(
+        'meta_key' => 'pwless_admin_generated_login_link',
+    ));
+
+    if (empty($users)) {
+        return array();
+    }
+
+    $rows = array();
+    foreach ($users as $user) {
+        $data = pwless_get_admin_generated_link_data($user->ID);
+        $rows[] = array(
+            'user' => $user,
+            'data' => $data,
+            'state' => pwless_get_admin_generated_link_state($user->ID, $admin_id),
+        );
+    }
+
+    usort($rows, function ($left, $right) {
+        if ($left['data']['created_at'] === $right['data']['created_at']) {
+            return strcasecmp($left['user']->display_name, $right['user']->display_name);
+        }
+
+        return ($left['data']['created_at'] < $right['data']['created_at']) ? 1 : -1;
+    });
+
+    return $rows;
+}
+
+function pwless_render_admin_generated_link_row($user, $state)
+{
+    $ajax_nonce = wp_create_nonce('pwless_manage_user_direct_link_' . $user->ID);
+    $ajax_url = admin_url('admin-ajax.php');
+    ?>
+    <tr class="pwless-admin-link-manager pwless-login-links-row" data-user-id="<?php echo intval($user->ID); ?>"
+        data-ajax-url="<?php echo esc_url($ajax_url); ?>" data-ajax-nonce="<?php echo esc_attr($ajax_nonce); ?>">
+        <td class="column-user">
+            <a class="pwless-admin-link-user-name" href="<?php echo esc_url(get_edit_user_link($user->ID)); ?>">
+                <?php echo esc_html($user->display_name); ?>
+            </a>
+        </td>
+        <td class="column-email">
+            <a href="mailto:<?php echo esc_attr($user->user_email); ?>">
+                <?php echo esc_html($user->user_email); ?>
+            </a>
+        </td>
+        <td class="column-link">
+            <input type="text" class="regular-text code pwless-admin-generated-link" readonly
+                value="<?php echo esc_attr($state['generated_url']); ?>"
+                style="<?php echo !empty($state['generated_url']) ? '' : 'display:none;'; ?>">
+            <p class="description pwless-generated-link-help"
+                style="<?php echo !empty($state['generated_url']) ? '' : 'display:none;'; ?>">Copie este link e envie ao
+                usuário.</p>
+            <p class="description pwless-generated-link-empty"
+                style="<?php echo empty($state['generated_url']) ? '' : 'display:none;'; ?>">
+                <?php echo esc_html($state['has_active_link'] ? 'Link indisponível para cópia nesta sessão. Gere novamente para obter o URL completo.' : 'Nenhum link ativo para este usuário.'); ?>
+            </p>
+        </td>
+        <td><span class="pwless-created-at"><?php echo esc_html($state['created_at']); ?></span></td>
+        <td><span class="pwless-expires-at"><?php echo esc_html($state['expires_at']); ?></span></td>
+        <td><span class="pwless-uses-info"><?php echo esc_html($state['uses_info']); ?></span></td>
+        <td><span class="pwless-last-used"><?php echo esc_html($state['last_used']); ?></span></td>
+        <td class="column-actions">
+            <div class="pwless-admin-link-inline-fields">
+                <label>
+                    <span>Expiração (min)</span>
+                    <input type="number" min="0" class="small-text pwless-admin-link-expiry-minutes"
+                        value="<?php echo esc_attr($state['default_expiry']); ?>">
+                </label>
+                <label>
+                    <span>Limite de usos</span>
+                    <input type="number" min="0" class="small-text pwless-admin-link-max-uses"
+                        value="<?php echo esc_attr($state['default_max_uses']); ?>">
+                </label>
+            </div>
+            <div class="pwless-admin-link-actions-group">
+                <button type="button" class="button button-primary pwless-admin-link-action pwless-generate-link-btn">Gerar
+                    link</button>
+                <button type="button" class="button button-secondary pwless-admin-link-action pwless-revoke-link-btn"
+                    style="<?php echo $state['has_active_link'] ? '' : 'display:none;'; ?>">Revogar</button>
+                <button type="button" class="button pwless-admin-link-action pwless-copy-link-btn"
+                    style="<?php echo !empty($state['generated_url']) ? '' : 'display:none;'; ?>">Copiar</button>
+            </div>
+            <p class="pwless-no-link-message" style="<?php echo $state['has_active_link'] ? 'display:none;' : ''; ?>">
+                <em>Nenhum link ativo para este usuário.</em>
+            </p>
+            <div class="pwless-admin-link-notice notice inline" style="display:none;">
+                <p></p>
+            </div>
+        </td>
+    </tr>
+    <?php
+}
+
+function pwless_render_login_links_admin_tab()
+{
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+
+    pwless_render_admin_generated_link_assets();
+    $rows = pwless_get_admin_generated_link_rows(get_current_user_id());
+    ?>
+    <div class="tab-content" id="login-links" style="display: none;">
+        <h2>Links de login</h2>
+        <p class="description">Aqui aparecem os links diretos gerados na edição de usuários. Se algum link antigo estiver
+            sem URL para cópia, gere novamente para atualizar o registro.</p>
+        <?php if (empty($rows)): ?>
+            <p>Nenhum link direto foi gerado até o momento.</p>
+        <?php else: ?>
+            <table class="wp-list-table widefat striped pwless-login-links-table">
+                <thead>
+                    <tr>
+                        <th class="column-user">Usuário</th>
+                        <th class="column-email">Email</th>
+                        <th class="column-link">Link</th>
+                        <th>Criado em</th>
+                        <th>Expira em</th>
+                        <th>Usos</th>
+                        <th>Último uso</th>
+                        <th class="column-actions">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($rows as $row): ?>
+                        <?php pwless_render_admin_generated_link_row($row['user'], $row['state']); ?>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+    </div>
+    <?php
 }
 
 function pwless_render_user_direct_login_card($user)
@@ -540,31 +979,33 @@ function pwless_render_user_direct_login_card($user)
         return;
     }
 
-    $state = pwless_get_admin_generated_link_state($user->ID);
-    $transient_key = pwless_get_admin_generated_link_transient_key(get_current_user_id(), $user->ID);
-    $generated = get_transient($transient_key);
-    $generated_url = (is_array($generated) && !empty($generated['url'])) ? $generated['url'] : '';
+    $state = pwless_get_admin_generated_link_state($user->ID, get_current_user_id());
     $ajax_nonce = wp_create_nonce('pwless_manage_user_direct_link_' . $user->ID);
     $ajax_url = admin_url('admin-ajax.php');
+    pwless_render_admin_generated_link_assets();
     ?>
     <h2>ZeroPass: Link direto de login</h2>
-    <div id="pwless-admin-link-card">
-        <div id="pwless-admin-link-notice" class="notice inline" style="display:none;">
+    <div class="pwless-admin-link-manager" data-user-id="<?php echo intval($user->ID); ?>"
+        data-ajax-url="<?php echo esc_url($ajax_url); ?>" data-ajax-nonce="<?php echo esc_attr($ajax_nonce); ?>">
+        <div class="pwless-admin-link-notice notice inline" style="display:none;">
             <p></p>
         </div>
         <table class="form-table" role="presentation">
             <tr>
-                <th><label for="pwless_admin_link_expiry_minutes">Expiração (minutos)</label></th>
+                <th><label for="pwless_admin_link_expiry_minutes_<?php echo intval($user->ID); ?>">Expiração
+                        (minutos)</label></th>
                 <td>
-                    <input type="number" id="pwless_admin_link_expiry_minutes" min="0" class="small-text"
+                    <input type="number" id="pwless_admin_link_expiry_minutes_<?php echo intval($user->ID); ?>" min="0"
+                        class="small-text pwless-admin-link-expiry-minutes"
                         value="<?php echo esc_attr($state['default_expiry']); ?>">
                     <p class="description">Use 0 para não expirar (padrão).</p>
                 </td>
             </tr>
             <tr>
-                <th><label for="pwless_admin_link_max_uses">Limite de usos</label></th>
+                <th><label for="pwless_admin_link_max_uses_<?php echo intval($user->ID); ?>">Limite de usos</label></th>
                 <td>
-                    <input type="number" id="pwless_admin_link_max_uses" min="0" class="small-text"
+                    <input type="number" id="pwless_admin_link_max_uses_<?php echo intval($user->ID); ?>" min="0"
+                        class="small-text pwless-admin-link-max-uses"
                         value="<?php echo esc_attr($state['default_max_uses']); ?>">
                     <p class="description">Use 0 para usos ilimitados (padrão).</p>
                 </td>
@@ -572,168 +1013,52 @@ function pwless_render_user_direct_login_card($user)
             <tr>
                 <th>Ações</th>
                 <td>
-                    <button type="button" id="pwless-generate-link-btn" class="button button-primary">Gerar link de
-                        login</button>
-                    <button type="button" id="pwless-revoke-link-btn" class="button button-secondary"
+                    <button type="button" class="button button-primary pwless-admin-link-action pwless-generate-link-btn">Gerar
+                        link de login</button>
+                    <button type="button"
+                        class="button button-secondary pwless-admin-link-action pwless-revoke-link-btn"
                         style="margin-left:8px;<?php echo $state['has_active_link'] ? '' : 'display:none;'; ?>">Revogar link
                         atual</button>
-                    <button type="button" id="pwless-copy-link-btn" class="button"
-                        style="margin-left:8px;<?php echo !empty($generated_url) ? '' : 'display:none;'; ?>">Copiar
+                    <button type="button" class="button pwless-admin-link-action pwless-copy-link-btn"
+                        style="margin-left:8px;<?php echo !empty($state['generated_url']) ? '' : 'display:none;'; ?>">Copiar
                         link</button>
                     <p class="description">Tudo é processado em AJAX, sem refresh da página.</p>
                 </td>
             </tr>
-            <tr id="pwless-generated-link-row" style="<?php echo !empty($generated_url) ? '' : 'display:none;'; ?>">
-                <th><label for="pwless_admin_generated_link">Link gerado</label></th>
+            <tr>
+                <th><label for="pwless_admin_generated_link_<?php echo intval($user->ID); ?>">Link gerado</label></th>
                 <td>
-                    <input type="text" id="pwless_admin_generated_link" class="regular-text code" readonly
-                        value="<?php echo esc_attr($generated_url); ?>" style="width:100%;max-width:720px;">
-                    <p class="description">Copie este link e envie ao usuário.</p>
+                    <input type="text" id="pwless_admin_generated_link_<?php echo intval($user->ID); ?>"
+                        class="regular-text code pwless-admin-generated-link" readonly
+                        value="<?php echo esc_attr($state['generated_url']); ?>"
+                        style="<?php echo !empty($state['generated_url']) ? '' : 'display:none;'; ?>">
+                    <p class="description pwless-generated-link-help"
+                        style="<?php echo !empty($state['generated_url']) ? '' : 'display:none;'; ?>">Copie este link e
+                        envie ao usuário.</p>
+                    <p class="description pwless-generated-link-empty"
+                        style="<?php echo empty($state['generated_url']) ? '' : 'display:none;'; ?>">
+                        <?php echo esc_html($state['has_active_link'] ? 'Link indisponível para cópia nesta sessão. Gere novamente para obter o URL completo.' : 'Nenhum link ativo para este usuário.'); ?>
+                    </p>
                 </td>
             </tr>
             <tr>
                 <th>Status do link atual</th>
                 <td>
-                    <p id="pwless-no-link-message" style="<?php echo $state['has_active_link'] ? 'display:none;' : ''; ?>">
+                    <p class="pwless-no-link-message" style="<?php echo $state['has_active_link'] ? 'display:none;' : ''; ?>">
                         <em>Nenhum link foi gerado para este usuário ainda.</em>
                     </p>
-                    <p><strong>Criado em:</strong> <span
-                            id="pwless-created-at"><?php echo esc_html($state['created_at']); ?></span></p>
+                    <p><strong>Criado em:</strong> <span class="pwless-created-at"><?php echo esc_html($state['created_at']); ?></span>
+                    </p>
                     <p><strong>Expira em:</strong> <span
-                            id="pwless-expires-at"><?php echo esc_html($state['expires_at']); ?></span></p>
-                    <p><strong>Usos:</strong> <span
-                            id="pwless-uses-info"><?php echo esc_html($state['uses_info']); ?></span></p>
-                    <p><strong>Último uso:</strong> <span
-                            id="pwless-last-used"><?php echo esc_html($state['last_used']); ?></span></p>
+                            class="pwless-expires-at"><?php echo esc_html($state['expires_at']); ?></span></p>
+                    <p><strong>Usos:</strong> <span class="pwless-uses-info"><?php echo esc_html($state['uses_info']); ?></span>
+                    </p>
+                    <p><strong>Último uso:</strong> <span class="pwless-last-used"><?php echo esc_html($state['last_used']); ?></span>
+                    </p>
                 </td>
             </tr>
         </table>
     </div>
-    <script>
-        (function ($) {
-            var ajaxUrl = <?php echo wp_json_encode($ajax_url); ?>;
-            var ajaxNonce = <?php echo wp_json_encode($ajax_nonce); ?>;
-            var userId = <?php echo intval($user->ID); ?>;
-
-            var $notice = $('#pwless-admin-link-notice');
-            var $generateBtn = $('#pwless-generate-link-btn');
-            var $revokeBtn = $('#pwless-revoke-link-btn');
-            var $copyBtn = $('#pwless-copy-link-btn');
-            var $linkRow = $('#pwless-generated-link-row');
-            var $linkInput = $('#pwless_admin_generated_link');
-            var $noLinkMessage = $('#pwless-no-link-message');
-            var $createdAt = $('#pwless-created-at');
-            var $expiresAt = $('#pwless-expires-at');
-            var $usesInfo = $('#pwless-uses-info');
-            var $lastUsed = $('#pwless-last-used');
-
-            function setLoading(isLoading) {
-                $generateBtn.prop('disabled', isLoading);
-                $revokeBtn.prop('disabled', isLoading);
-                $copyBtn.prop('disabled', isLoading);
-            }
-
-            function showNotice(message, isError) {
-                $notice.removeClass('notice-success notice-error').addClass(isError ? 'notice-error' : 'notice-success');
-                $notice.find('p').text(message);
-                $notice.show();
-            }
-
-            function updateState(payload) {
-                if (!payload || !payload.state) {
-                    return;
-                }
-
-                var state = payload.state;
-                $createdAt.text(state.created_at || '-');
-                $expiresAt.text(state.expires_at || '-');
-                $usesInfo.text(state.uses_info || '-');
-                $lastUsed.text(state.last_used || '-');
-
-                if (state.has_active_link) {
-                    $noLinkMessage.hide();
-                    $revokeBtn.show();
-                } else {
-                    $noLinkMessage.show();
-                    $revokeBtn.hide();
-                }
-
-                if (payload.generated_url) {
-                    $linkInput.val(payload.generated_url);
-                    $linkRow.show();
-                    $copyBtn.show();
-                } else {
-                    $linkInput.val('');
-                    $linkRow.hide();
-                    $copyBtn.hide();
-                }
-            }
-
-            function runOperation(operation) {
-                setLoading(true);
-                $notice.hide();
-
-                $.post(ajaxUrl, {
-                    action: 'pwless_manage_user_direct_link',
-                    security: ajaxNonce,
-                    operation: operation,
-                    user_id: userId,
-                    expiry_minutes: $('#pwless_admin_link_expiry_minutes').val(),
-                    max_uses: $('#pwless_admin_link_max_uses').val()
-                }).done(function (response) {
-                    if (!response || !response.success) {
-                        showNotice(response && response.data && response.data.message ? response.data.message : 'Erro ao processar a solicitação.', true);
-                        return;
-                    }
-
-                    updateState(response.data);
-                    showNotice(response.data && response.data.message ? response.data.message : 'Ação concluída.', false);
-                }).fail(function () {
-                    showNotice('Erro de conexão ao processar a solicitação.', true);
-                }).always(function () {
-                    setLoading(false);
-                });
-            }
-
-            $generateBtn.on('click', function (e) {
-                e.preventDefault();
-                runOperation('generate');
-            });
-
-            $revokeBtn.on('click', function (e) {
-                e.preventDefault();
-                if (!window.confirm('Tem certeza que deseja revogar o link atual?')) {
-                    return;
-                }
-                runOperation('revoke');
-            });
-
-            $copyBtn.on('click', function (e) {
-                e.preventDefault();
-                var value = $linkInput.val();
-                if (!value) {
-                    return;
-                }
-
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(value).then(function () {
-                        showNotice('Link copiado para a área de transferência.', false);
-                    }, function () {
-                        showNotice('Não foi possível copiar o link automaticamente.', true);
-                    });
-                    return;
-                }
-
-                $linkInput.trigger('focus').trigger('select');
-                try {
-                    document.execCommand('copy');
-                    showNotice('Link copiado para a área de transferência.', false);
-                } catch (err) {
-                    showNotice('Não foi possível copiar o link automaticamente.', true);
-                }
-            });
-        })(jQuery);
-    </script>
     <?php
 }
 add_action('show_user_profile', 'pwless_render_user_direct_login_card');
@@ -1173,6 +1498,7 @@ function pwless_settings_page()
                 <a href="#" class="nav-tab nav-tab-active" data-tab="email">Email</a>
                 <a href="#" class="nav-tab" data-tab="form">Formulário</a>
                 <a href="#" class="nav-tab" data-tab="security">Segurança</a>
+                <a href="#" class="nav-tab" data-tab="login-links">Link de login</a>
                 <a href="#" class="nav-tab" data-tab="reset">Reset de Senha</a>
                 <a href="#" class="nav-tab" data-tab="shortcode">Shortcodes</a>
                 <a href="#" class="nav-tab" data-tab="logs">Logs</a>
@@ -1281,6 +1607,8 @@ function pwless_settings_page()
                     </tr>
                 </table>
             </div>
+
+            <?php pwless_render_login_links_admin_tab(); ?>
 
             <div class="tab-content" id="reset" style="display: none;">
                 <h2>Configurações de Reset de Senha</h2>
@@ -1495,7 +1823,7 @@ function pwless_settings_page()
             // Função para mostrar/esconder o botão de salvar
             function toggleSubmitButton(tab) {
                 var $submitWrapper = $('.submit-button-wrapper');
-                if (tab === 'shortcode' || tab === 'logs' || tab === 'sobre') {
+                if (tab === 'login-links' || tab === 'shortcode' || tab === 'logs' || tab === 'sobre') {
                     $submitWrapper.hide();
                 } else {
                     $submitWrapper.show();
