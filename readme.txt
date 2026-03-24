@@ -4,7 +4,7 @@ Tags: login, passwordless, authentication, security
 Requires at least: 5.0
 Tested up to: 6.4
 Requires PHP: 7.4
-Stable tag: 4.1.17
+Stable tag: 4.1.18
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,9 @@ Ideal para quem deseja melhorar a experiência do usuário e aumentar a seguran�
 3. Configure os remetentes e opções de e-mail nas configurações do plugin.
 
 == Changelog ==
+
+= 4.1.18 =
+* Adiciona paginação e botão de atualização assíncrona na aba de logs do painel.
 
 = 4.1.17 =
 * Corrige o fuso horário dos logs para exibição em `America/Sao_Paulo`.

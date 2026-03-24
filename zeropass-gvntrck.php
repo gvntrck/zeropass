@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.1.17
+Version: 4.1.18
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -30,7 +30,7 @@ $myUpdateChecker->setAuthentication('your-token-here');
 
 
 if (!defined('PWLESS_PLUGIN_VERSION')) {
-    define('PWLESS_PLUGIN_VERSION', '4.1.17');
+    define('PWLESS_PLUGIN_VERSION', '4.1.18');
 }
 
 function pwless_get_login_form_redirect_url($args = array())
@@ -1800,32 +1800,26 @@ function pwless_settings_page()
             </div>
 
             <div class="tab-content" id="logs" style="display: none;">
-                <h2>Logs de Login</h2>
-                <?php
-                global $wpdb;
-                $table_name = $wpdb->prefix . 'pwless_logs';
-                if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") == $table_name) {
-                    $logs = $wpdb->get_results("SELECT * FROM $table_name ORDER BY created_at DESC LIMIT 10");
-                    if ($logs) {
-                        echo '<table class="wp-list-table widefat fixed striped">';
-                        echo '<thead><tr><th>Data</th><th>Email</th><th>Status</th><th>IP</th></tr></thead>';
-                        echo '<tbody>';
-                        foreach ($logs as $log) {
-                            echo '<tr>';
-                            echo '<td>' . esc_html(pwless_format_log_created_at($log->created_at)) . '</td>';
-                            echo '<td>' . esc_html($log->email) . '</td>';
-                            echo '<td>' . esc_html($log->status) . '</td>';
-                            echo '<td>' . esc_html($log->ip_address) . '</td>';
-                            echo '</tr>';
-                        }
-                        echo '</tbody></table>';
-                    } else {
-                        echo '<p>Nenhum log encontrado.</p>';
-                    }
-                } else {
-                    echo '<p>Tabela de logs não encontrada. Ative o logging nas configurações de segurança.</p>';
-                }
-                ?>
+                <div class="pwless-logs-toolbar">
+                    <div>
+                        <h2>Logs de Login</h2>
+                        <p class="description">Navegue pelas páginas e atualize a lista sem recarregar a tela.</p>
+                    </div>
+                    <div class="pwless-logs-toolbar-actions">
+                        <button type="button" class="button" id="pwless-refresh-logs">Atualizar</button>
+                        <span class="spinner" id="pwless-logs-spinner"></span>
+                    </div>
+                </div>
+                <div id="pwless-logs-feedback" class="notice inline" style="display:none;">
+                    <p></p>
+                </div>
+                <div id="pwless-logs-container"
+                    data-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>"
+                    data-security="<?php echo esc_attr(wp_create_nonce('pwless_fetch_logs')); ?>"
+                    data-current-page="1"
+                    data-per-page="10">
+                    <?php echo pwless_render_logs_table_markup(1, 10); ?>
+                </div>
             </div>
 
             <div class="tab-content" id="sobre" style="display: none;">
@@ -1903,10 +1897,64 @@ function pwless_settings_page()
         .nav-tab-wrapper {
             margin-bottom: 20px;
         }
+
+        .pwless-logs-toolbar {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .pwless-logs-toolbar h2 {
+            margin-bottom: 4px;
+        }
+
+        .pwless-logs-toolbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #pwless-logs-container.is-loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .pwless-logs-pagination {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        .pwless-logs-pagination-buttons {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .pwless-logs-pagination-ellipsis {
+            color: #646970;
+            padding: 0 4px;
+        }
+
+        .pwless-logs-empty-state {
+            margin: 0;
+        }
     </style>
 
     <script>
         jQuery(document).ready(function ($) {
+            var $logsContainer = $('#pwless-logs-container');
+            var $logsFeedback = $('#pwless-logs-feedback');
+            var $logsRefreshButton = $('#pwless-refresh-logs');
+            var $logsSpinner = $('#pwless-logs-spinner');
+
             // Função para mostrar/esconder o botão de salvar
             function toggleSubmitButton(tab) {
                 var $submitWrapper = $('.submit-button-wrapper');
@@ -1919,6 +1967,94 @@ function pwless_settings_page()
 
             // Inicializa com a aba ativa
             toggleSubmitButton('email');
+
+            function showLogsFeedback(message, isError) {
+                if (!$logsFeedback.length) {
+                    return;
+                }
+
+                if (!message) {
+                    $logsFeedback.hide().removeClass('notice-error notice-success').find('p').text('');
+                    return;
+                }
+
+                $logsFeedback
+                    .removeClass('notice-error notice-success')
+                    .addClass(isError ? 'notice-error' : 'notice-success')
+                    .show()
+                    .find('p')
+                    .text(message);
+            }
+
+            function setLogsLoading(isLoading) {
+                if (!$logsContainer.length) {
+                    return;
+                }
+
+                $logsContainer.toggleClass('is-loading', isLoading);
+                $logsRefreshButton.prop('disabled', isLoading);
+
+                if (isLoading) {
+                    $logsSpinner.addClass('is-active');
+                    return;
+                }
+
+                $logsSpinner.removeClass('is-active');
+            }
+
+            function loadLogsPage(page) {
+                if (!$logsContainer.length) {
+                    return;
+                }
+
+                var targetPage = parseInt(page, 10) || parseInt($logsContainer.attr('data-current-page'), 10) || 1;
+                var perPage = parseInt($logsContainer.attr('data-per-page'), 10) || 10;
+
+                showLogsFeedback('', false);
+                setLogsLoading(true);
+
+                $.ajax({
+                    url: $logsContainer.data('ajax-url'),
+                    type: 'POST',
+                    dataType: 'json',
+                    data: {
+                        action: 'pwless_fetch_logs',
+                        security: $logsContainer.data('security'),
+                        page: targetPage,
+                        per_page: perPage
+                    }
+                }).done(function (response) {
+                    if (!response || !response.success || !response.data || typeof response.data.html === 'undefined') {
+                        showLogsFeedback('Não foi possível carregar os logs.', true);
+                        return;
+                    }
+
+                    $logsContainer.html(response.data.html);
+                    $logsContainer.attr('data-current-page', response.data.current_page || 1);
+                }).fail(function (xhr) {
+                    var message = 'Não foi possível carregar os logs.';
+
+                    if (xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) {
+                        message = xhr.responseJSON.data.message;
+                    }
+
+                    showLogsFeedback(message, true);
+                }).always(function () {
+                    setLogsLoading(false);
+                });
+            }
+
+            $logsRefreshButton.on('click', function () {
+                loadLogsPage();
+            });
+
+            $(document).on('click', '.pwless-logs-page-button', function () {
+                if ($(this).prop('disabled')) {
+                    return;
+                }
+
+                loadLogsPage($(this).data('page'));
+            });
 
             $('.nav-tab').on('click', function (e) {
                 e.preventDefault();
@@ -1987,6 +2123,204 @@ function pwless_format_log_created_at($created_at)
         return $created_at;
     }
 }
+
+function pwless_get_logs_table_name()
+{
+    global $wpdb;
+
+    return $wpdb->prefix . 'pwless_logs';
+}
+
+function pwless_logs_table_exists()
+{
+    global $wpdb;
+
+    $table_name = pwless_get_logs_table_name();
+    $existing_table_name = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name));
+
+    return $existing_table_name === $table_name;
+}
+
+function pwless_get_logs_page_items($current_page, $total_pages)
+{
+    $items = array();
+    $start = max(1, $current_page - 2);
+    $end = min($total_pages, $current_page + 2);
+
+    if ($start > 1) {
+        $items[] = 1;
+
+        if ($start > 2) {
+            $items[] = 'ellipsis';
+        }
+    }
+
+    for ($page = $start; $page <= $end; $page++) {
+        $items[] = $page;
+    }
+
+    if ($end < $total_pages) {
+        if ($end < ($total_pages - 1)) {
+            $items[] = 'ellipsis';
+        }
+
+        $items[] = $total_pages;
+    }
+
+    return $items;
+}
+
+function pwless_get_logs_page_data($page = 1, $per_page = 10)
+{
+    global $wpdb;
+
+    $per_page = max(1, min(50, absint($per_page) ?: 10));
+    $requested_page = max(1, absint($page));
+    $table_name = pwless_get_logs_table_name();
+
+    if (!pwless_logs_table_exists()) {
+        return array(
+            'table_exists' => false,
+            'logs' => array(),
+            'current_page' => 1,
+            'per_page' => $per_page,
+            'total_items' => 0,
+            'total_pages' => 1,
+            'from_item' => 0,
+            'to_item' => 0,
+        );
+    }
+
+    $total_items = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table_name}");
+    $total_pages = max(1, (int) ceil($total_items / $per_page));
+    $current_page = min($requested_page, $total_pages);
+    $offset = ($current_page - 1) * $per_page;
+    $logs = array();
+
+    if ($total_items > 0) {
+        $query = $wpdb->prepare(
+            "SELECT * FROM {$table_name} ORDER BY created_at DESC, id DESC LIMIT %d OFFSET %d",
+            $per_page,
+            $offset
+        );
+        $logs = $wpdb->get_results($query);
+    }
+
+    return array(
+        'table_exists' => true,
+        'logs' => $logs,
+        'current_page' => $current_page,
+        'per_page' => $per_page,
+        'total_items' => $total_items,
+        'total_pages' => $total_pages,
+        'from_item' => $total_items > 0 ? ($offset + 1) : 0,
+        'to_item' => $total_items > 0 ? min($offset + $per_page, $total_items) : 0,
+    );
+}
+
+function pwless_render_logs_table_markup($page = 1, $per_page = 10)
+{
+    $logs_data = pwless_get_logs_page_data($page, $per_page);
+
+    ob_start();
+
+    if (!$logs_data['table_exists']) {
+        echo '<p class="pwless-logs-empty-state">Tabela de logs não encontrada. Ative o logging nas configurações de segurança.</p>';
+
+        return ob_get_clean();
+    }
+
+    if (empty($logs_data['logs'])) {
+        echo '<p class="pwless-logs-empty-state">Nenhum log encontrado.</p>';
+
+        return ob_get_clean();
+    }
+    ?>
+    <table class="wp-list-table widefat fixed striped">
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Email</th>
+                <th>Status</th>
+                <th>IP</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach ($logs_data['logs'] as $log): ?>
+                <tr>
+                    <td><?php echo esc_html(pwless_format_log_created_at($log->created_at)); ?></td>
+                    <td><?php echo esc_html($log->email); ?></td>
+                    <td><?php echo esc_html($log->status); ?></td>
+                    <td><?php echo esc_html($log->ip_address); ?></td>
+                </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+    <div class="pwless-logs-pagination">
+        <span class="displaying-num">
+            <?php
+            echo esc_html(
+                sprintf(
+                    'Mostrando %1$s a %2$s de %3$s registros',
+                    number_format_i18n($logs_data['from_item']),
+                    number_format_i18n($logs_data['to_item']),
+                    number_format_i18n($logs_data['total_items'])
+                )
+            );
+            ?>
+        </span>
+        <?php if ($logs_data['total_pages'] > 1): ?>
+            <div class="pwless-logs-pagination-buttons">
+                <button type="button" class="button pwless-logs-page-button"
+                    data-page="<?php echo esc_attr(max(1, $logs_data['current_page'] - 1)); ?>"
+                    <?php disabled($logs_data['current_page'] <= 1); ?>>
+                    Anterior
+                </button>
+                <?php foreach (pwless_get_logs_page_items($logs_data['current_page'], $logs_data['total_pages']) as $page_item): ?>
+                    <?php if ($page_item === 'ellipsis'): ?>
+                        <span class="pwless-logs-pagination-ellipsis">&hellip;</span>
+                    <?php else: ?>
+                        <button type="button"
+                            class="button pwless-logs-page-button <?php echo $page_item === $logs_data['current_page'] ? 'button-primary' : ''; ?>"
+                            data-page="<?php echo esc_attr($page_item); ?>"
+                            <?php disabled($page_item === $logs_data['current_page']); ?>
+                            <?php echo $page_item === $logs_data['current_page'] ? 'aria-current="page"' : ''; ?>>
+                            <?php echo esc_html(number_format_i18n($page_item)); ?>
+                        </button>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+                <button type="button" class="button pwless-logs-page-button"
+                    data-page="<?php echo esc_attr(min($logs_data['total_pages'], $logs_data['current_page'] + 1)); ?>"
+                    <?php disabled($logs_data['current_page'] >= $logs_data['total_pages']); ?>>
+                    Próxima
+                </button>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php
+
+    return ob_get_clean();
+}
+
+function pwless_ajax_fetch_logs()
+{
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => 'Acesso negado.'), 403);
+    }
+
+    check_ajax_referer('pwless_fetch_logs', 'security');
+
+    $page = isset($_POST['page']) ? absint(wp_unslash($_POST['page'])) : 1;
+    $per_page = isset($_POST['per_page']) ? absint(wp_unslash($_POST['per_page'])) : 10;
+    $logs_data = pwless_get_logs_page_data($page, $per_page);
+
+    wp_send_json_success(array(
+        'html' => pwless_render_logs_table_markup($page, $per_page),
+        'current_page' => $logs_data['current_page'],
+        'total_pages' => $logs_data['total_pages'],
+    ));
+}
+add_action('wp_ajax_pwless_fetch_logs', 'pwless_ajax_fetch_logs');
 
 // Função para registrar logs
 function pwless_log_attempt($email, $status)
