@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.1.16
+Version: 4.1.17
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -30,7 +30,7 @@ $myUpdateChecker->setAuthentication('your-token-here');
 
 
 if (!defined('PWLESS_PLUGIN_VERSION')) {
-    define('PWLESS_PLUGIN_VERSION', '4.1.16');
+    define('PWLESS_PLUGIN_VERSION', '4.1.17');
 }
 
 function pwless_get_login_form_redirect_url($args = array())
@@ -1812,7 +1812,7 @@ function pwless_settings_page()
                         echo '<tbody>';
                         foreach ($logs as $log) {
                             echo '<tr>';
-                            echo '<td>' . esc_html($log->created_at) . '</td>';
+                            echo '<td>' . esc_html(pwless_format_log_created_at($log->created_at)) . '</td>';
                             echo '<td>' . esc_html($log->email) . '</td>';
                             echo '<td>' . esc_html($log->status) . '</td>';
                             echo '<td>' . esc_html($log->ip_address) . '</td>';
@@ -1972,6 +1972,22 @@ function pwless_maybe_upgrade_plugin()
 }
 add_action('plugins_loaded', 'pwless_maybe_upgrade_plugin');
 
+function pwless_format_log_created_at($created_at)
+{
+    if (empty($created_at) || $created_at === '0000-00-00 00:00:00') {
+        return '-';
+    }
+
+    try {
+        $utc_datetime = new DateTimeImmutable($created_at, new DateTimeZone('UTC'));
+        $brazil_datetime = $utc_datetime->setTimezone(new DateTimeZone('America/Sao_Paulo'));
+
+        return $brazil_datetime->format('Y-m-d H:i:s');
+    } catch (Exception $exception) {
+        return $created_at;
+    }
+}
+
 // Função para registrar logs
 function pwless_log_attempt($email, $status)
 {
@@ -1987,9 +2003,10 @@ function pwless_log_attempt($email, $status)
         array(
             'email' => $email,
             'status' => sanitize_text_field($status),
-            'ip_address' => isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : ''
+            'ip_address' => isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field(wp_unslash($_SERVER['REMOTE_ADDR'])) : '',
+            'created_at' => current_time('mysql', true),
         ),
-        array('%s', '%s', '%s')
+        array('%s', '%s', '%s', '%s')
     );
 }
 
