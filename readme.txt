@@ -4,7 +4,7 @@ Tags: login, passwordless, authentication, security
 Requires at least: 5.0
 Tested up to: 6.4
 Requires PHP: 7.4
-Stable tag: 4.1.15
+Stable tag: 4.1.16
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,9 @@ Ideal para quem deseja melhorar a experiência do usuário e aumentar a seguran�
 3. Configure os remetentes e opções de e-mail nas configurações do plugin.
 
 == Changelog ==
+
+= 4.1.16 =
+* Corrige o reenvio do formulário de link mágico no `F5` usando redirecionamento após o `POST`.
 
 = 4.1.15 =
 * Adiciona a aba administrativa "Link de login" com listagem centralizada dos links diretos gerados para usuários.

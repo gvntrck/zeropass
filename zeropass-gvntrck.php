@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.1.15
+Version: 4.1.16
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -30,8 +30,155 @@ $myUpdateChecker->setAuthentication('your-token-here');
 
 
 if (!defined('PWLESS_PLUGIN_VERSION')) {
-    define('PWLESS_PLUGIN_VERSION', '4.1.15');
+    define('PWLESS_PLUGIN_VERSION', '4.1.16');
 }
+
+function pwless_get_login_form_redirect_url($args = array())
+{
+    $redirect_url = remove_query_arg(array('pwless_notice'));
+
+    if (!empty($args)) {
+        $redirect_url = add_query_arg($args, $redirect_url);
+    }
+
+    return $redirect_url;
+}
+
+function pwless_store_login_form_feedback($message, $email = '')
+{
+    $feedback_key = wp_generate_uuid4();
+    $feedback_data = array(
+        'message' => $message,
+        'email' => sanitize_email($email),
+    );
+
+    set_transient(
+        'pwless_login_feedback_' . $feedback_key,
+        $feedback_data,
+        5 * MINUTE_IN_SECONDS
+    );
+
+    return $feedback_key;
+}
+
+function pwless_get_login_form_feedback()
+{
+    if (!isset($_GET['pwless_notice'])) {
+        return array(
+            'message' => '',
+            'email' => '',
+        );
+    }
+
+    $feedback_key = sanitize_key(wp_unslash($_GET['pwless_notice']));
+    if ($feedback_key === '') {
+        return array(
+            'message' => '',
+            'email' => '',
+        );
+    }
+
+    $feedback_data = get_transient('pwless_login_feedback_' . $feedback_key);
+    if (!is_array($feedback_data)) {
+        return array(
+            'message' => '',
+            'email' => '',
+        );
+    }
+
+    return array(
+        'message' => isset($feedback_data['message']) ? $feedback_data['message'] : '',
+        'email' => isset($feedback_data['email']) ? sanitize_email($feedback_data['email']) : '',
+    );
+}
+
+function pwless_redirect_login_form_with_feedback($message, $email = '')
+{
+    $feedback_key = pwless_store_login_form_feedback($message, $email);
+    $redirect_url = pwless_get_login_form_redirect_url(array(
+        'pwless_notice' => $feedback_key,
+    ));
+
+    wp_safe_redirect($redirect_url);
+    exit;
+}
+
+function pwless_handle_passwordless_login_form_submission()
+{
+    if (is_admin()) {
+        return;
+    }
+
+    if (!isset($_SERVER['REQUEST_METHOD']) || strtoupper(wp_unslash($_SERVER['REQUEST_METHOD'])) !== 'POST') {
+        return;
+    }
+
+    if (!isset($_POST['pwless_nonce'], $_POST['user_email'])) {
+        return;
+    }
+
+    $nonce = sanitize_text_field(wp_unslash($_POST['pwless_nonce']));
+    if (!wp_verify_nonce($nonce, 'pwless_login_action')) {
+        pwless_redirect_login_form_with_feedback('<div class="error">Erro de validação. Por favor, tente novamente.</div>');
+    }
+
+    if (get_option('pwless_enable_altcha')) {
+        $altcha_payload = isset($_POST['altcha']) ? sanitize_text_field(wp_unslash($_POST['altcha'])) : '';
+
+        if (empty($altcha_payload) || !pwless_altcha_verify($altcha_payload)) {
+            $email = isset($_POST['user_email']) ? sanitize_email(wp_unslash($_POST['user_email'])) : '';
+            pwless_log_attempt($email, 'Falha - ALTCHA inválido');
+            pwless_redirect_login_form_with_feedback('<div class="error">Verificação anti-spam falhou. Por favor, tente novamente.</div>', $email);
+        }
+    }
+
+    $email = sanitize_email(wp_unslash($_POST['user_email']));
+    if (!is_email($email)) {
+        pwless_log_attempt($email, 'erro_email_invalido');
+        pwless_redirect_login_form_with_feedback("<p class='error'>Email inválido.</p>", $email);
+    }
+
+    $user = get_user_by('email', $email);
+    if (!$user) {
+        pwless_log_attempt($email, 'usuario_nao_encontrado');
+        pwless_redirect_login_form_with_feedback("<p class='error'>" . get_option('pwless_error_message') . "</p>", $email);
+    }
+
+    $token = wp_generate_password(20, false);
+    $token_hash = wp_hash_password($token);
+    $token_created = time();
+    pwless_track_superseded_passwordless_token($user->ID);
+    update_user_meta($user->ID, 'passwordless_login_token', $token_hash);
+    update_user_meta($user->ID, 'passwordless_login_token_created', $token_created);
+
+    $login_url = add_query_arg(array(
+        'passwordless_login' => urlencode($token),
+        'user' => $user->ID,
+        'nonce' => wp_create_nonce('passwordless_login_' . $user->ID . '_' . $token_created)
+    ), site_url());
+
+    $expiry_seconds = get_option('pwless_link_expiry', 60) * 60; // Convertendo minutos para segundos
+    $email_template = get_option('pwless_email_template');
+    $email_content = str_replace(
+        array('{login_url}', '{expiry_time}'),
+        array($login_url, get_option('pwless_link_expiry', 60)), // Mostrando em minutos
+        $email_template
+    );
+
+    $headers = array('Content-Type: text/html; charset=UTF-8');
+    $subject = get_option('pwless_email_subject', 'Seu link de login');
+
+    if (wp_mail($email, $subject, $email_content, $headers)) {
+        pwless_log_attempt($email, 'email_enviado');
+        pwless_redirect_login_form_with_feedback(
+            "<p class='success'>" . str_replace('{expiry_time}', get_option('pwless_link_expiry', 60), get_option('pwless_success_message')) . "</p>"
+        );
+    }
+
+    pwless_log_attempt($email, 'erro_envio_email');
+    pwless_redirect_login_form_with_feedback("<p class='error'>Erro ao enviar email.</p>", $email);
+}
+add_action('template_redirect', 'pwless_handle_passwordless_login_form_submission');
 
 // Função para exibir o formulário de login sem senha
 function passwordless_login_form()
@@ -90,69 +237,9 @@ function passwordless_login_form()
         return ob_get_clean();
     }
 
-    $message = '';
-    $email = '';
-
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['user_email'])) {
-        if (!isset($_POST['pwless_nonce']) || !wp_verify_nonce($_POST['pwless_nonce'], 'pwless_login_action')) {
-            $message = '<div class="error">Erro de validação. Por favor, tente novamente.</div>';
-        } else {
-            // Verifica o ALTCHA se estiver habilitado
-            if (get_option('pwless_enable_altcha')) {
-                $altcha_payload = isset($_POST['altcha']) ? sanitize_text_field($_POST['altcha']) : '';
-
-                if (empty($altcha_payload) || !pwless_altcha_verify($altcha_payload)) {
-                    $message = '<div class="error">Verificação anti-spam falhou. Por favor, tente novamente.</div>';
-                    pwless_log_attempt(sanitize_email($_POST['user_email']), 'Falha - ALTCHA inválido');
-                    return display_login_form($message, $email);
-                }
-            }
-
-            $email = sanitize_email($_POST['user_email']);
-            if (!is_email($email)) {
-                $message = "<p class='error'>Email inválido.</p>";
-                pwless_log_attempt($email, 'erro_email_invalido');
-            } else {
-                $user = get_user_by('email', $email);
-                if ($user) {
-                    $token = wp_generate_password(20, false);
-                    $token_hash = wp_hash_password($token);
-                    $token_created = time();
-                    pwless_track_superseded_passwordless_token($user->ID);
-                    update_user_meta($user->ID, 'passwordless_login_token', $token_hash);
-                    update_user_meta($user->ID, 'passwordless_login_token_created', $token_created);
-
-                    $login_url = add_query_arg(array(
-                        'passwordless_login' => urlencode($token),
-                        'user' => $user->ID,
-                        'nonce' => wp_create_nonce('passwordless_login_' . $user->ID . '_' . $token_created)
-                    ), site_url());
-
-                    $expiry_seconds = get_option('pwless_link_expiry', 60) * 60; // Convertendo minutos para segundos
-                    $email_template = get_option('pwless_email_template');
-                    $email_content = str_replace(
-                        array('{login_url}', '{expiry_time}'),
-                        array($login_url, get_option('pwless_link_expiry', 60)), // Mostrando em minutos
-                        $email_template
-                    );
-
-                    $headers = array('Content-Type: text/html; charset=UTF-8');
-                    $subject = get_option('pwless_email_subject', 'Seu link de login');
-
-                    if (wp_mail($email, $subject, $email_content, $headers)) {
-                        $message = "<p class='success'>" . str_replace('{expiry_time}', get_option('pwless_link_expiry', 60), get_option('pwless_success_message')) . "</p>";
-                        pwless_log_attempt($email, 'email_enviado');
-                    } else {
-                        $message = "<p class='error'>Erro ao enviar email.</p>";
-                        pwless_log_attempt($email, 'erro_envio_email');
-                    }
-                } else {
-                    $message = "<p class='error'>" . get_option('pwless_error_message') . "</p>";
-                    pwless_log_attempt($email, 'usuario_nao_encontrado');
-                }
-            }
-        }
-    }
+    $feedback = pwless_get_login_form_feedback();
+    $message = $feedback['message'];
+    $email = $feedback['email'];
 
     return display_login_form($message, $email);
 }
@@ -169,7 +256,7 @@ function display_login_form($message = '', $email = '')
         <?php if (!empty($message))
             echo $message; ?>
 
-        <form method="post" class="pwless-login-form">
+        <form method="post" action="<?php echo esc_url(pwless_get_login_form_redirect_url()); ?>" class="pwless-login-form">
             <?php wp_nonce_field('pwless_login_action', 'pwless_nonce'); ?>
 
             <div class="pwless-form-group">
