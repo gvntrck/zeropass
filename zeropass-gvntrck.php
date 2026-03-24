@@ -34,7 +34,7 @@ $pwless_update_checker = \YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUp
     'zeropass-gvntrck'
 );
 
-$pwless_update_checker->setBranch('main');
+$pwless_update_checker->setBranch('beta');
 $pwless_update_checker->setAuthentication('your-token-here');
 
 require_once PWLESS_PLUGIN_DIR . 'includes/bootstrap.php';
