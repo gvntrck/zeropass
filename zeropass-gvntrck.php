@@ -1513,7 +1513,7 @@ function pwless_register_settings()
     register_setting('pwless_options', 'pwless_success_message');
     register_setting('pwless_options', 'pwless_error_message');
     register_setting('pwless_options', 'pwless_enable_logging', 'boolval');
-    register_setting('pwless_options', 'pwless_redirect_url');
+    register_setting('pwless_options', 'pwless_redirect_url', 'esc_url_raw');
 
     // Novas configurações para reset de senha
     register_setting('pwless_options', 'pwless_reset_email_subject');
@@ -1523,7 +1523,7 @@ function pwless_register_settings()
     register_setting('pwless_options', 'pwless_reset_button_text');
     register_setting('pwless_options', 'pwless_reset_form_title');
     register_setting('pwless_options', 'pwless_reset_description');
-    register_setting('pwless_options', 'pwless_reset_login_url');
+    register_setting('pwless_options', 'pwless_reset_login_url', 'esc_url_raw');
 
     // Configurações do ALTCHA
     register_setting('pwless_options', 'pwless_altcha_hmac_key');
@@ -1577,7 +1577,7 @@ function pwless_settings_page()
     ?>
     <div class="wrap">
         <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
-        <form action="options.php" method="post">
+        <form action="options.php" method="post" novalidate>
             <?php
             settings_fields('pwless_options');
             ?>
@@ -1950,6 +1950,7 @@ function pwless_settings_page()
 
     <script>
         jQuery(document).ready(function ($) {
+            var $settingsForm = $('form[action="options.php"]').first();
             var $logsContainer = $('#pwless-logs-container');
             var $logsFeedback = $('#pwless-logs-feedback');
             var $logsRefreshButton = $('#pwless-refresh-logs');
@@ -1967,6 +1968,12 @@ function pwless_settings_page()
 
             // Inicializa com a aba ativa
             toggleSubmitButton('email');
+
+            $settingsForm.on('submit', function () {
+                if (window.tinyMCE && typeof window.tinyMCE.triggerSave === 'function') {
+                    window.tinyMCE.triggerSave();
+                }
+            });
 
             function showLogsFeedback(message, isError) {
                 if (!$logsFeedback.length) {
