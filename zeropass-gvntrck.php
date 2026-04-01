@@ -510,16 +510,155 @@ function pwless_get_redirect_after_login()
     return $redirect_url;
 }
 
-function pwless_user_can_login_with_loggedin_plugin($user_id)
+function pwless_is_loggedin_plugin_active()
 {
-    if (!class_exists('Loggedin')) {
-        return true;
+    return defined('LOGGEDIN_FILE')
+        || class_exists('DuckDev\\Loggedin\\Core')
+        || class_exists('Loggedin');
+}
+
+function pwless_loggedin_limit_error_message()
+{
+    $message = 'Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.';
+
+    if (!pwless_is_loggedin_plugin_active()) {
+        return $message;
     }
 
-    $loggedin = new Loggedin();
-    $check = $loggedin->validate_block_logic(true, '', '', $user_id);
+    return apply_filters('loggedin_error_message', $message);
+}
 
-    return $check !== false;
+function pwless_loggedin_is_bypassed($user_id)
+{
+    if (!$user_id || !pwless_is_loggedin_plugin_active()) {
+        return false;
+    }
+
+    return (bool) apply_filters('loggedin_bypass', false, $user_id);
+}
+
+function pwless_loggedin_get_active_sessions_count($user_id)
+{
+    if (!$user_id) {
+        return 0;
+    }
+
+    if (!class_exists('WP_Session_Tokens')) {
+        require_once ABSPATH . WPINC . '/class-wp-session-tokens.php';
+    }
+
+    $manager = WP_Session_Tokens::get_instance($user_id);
+    return count($manager->get_all());
+}
+
+function pwless_loggedin_has_limit_reached($user_id)
+{
+    if (!$user_id || !pwless_is_loggedin_plugin_active()) {
+        return false;
+    }
+
+    if (pwless_loggedin_is_bypassed($user_id)) {
+        return false;
+    }
+
+    $maximum = intval(get_option('loggedin_maximum', 1));
+    $count = pwless_loggedin_get_active_sessions_count($user_id);
+    $reached = $count >= $maximum;
+
+    return (bool) apply_filters('loggedin_reached_limit', $reached, $user_id, $count);
+}
+
+function pwless_loggedin_destroy_all_sessions($user_id)
+{
+    if (!$user_id) {
+        return;
+    }
+
+    if (!class_exists('WP_Session_Tokens')) {
+        require_once ABSPATH . WPINC . '/class-wp-session-tokens.php';
+    }
+
+    WP_Session_Tokens::get_instance($user_id)->destroy_all();
+    do_action('loggedin_destroy_all_sessions', $user_id);
+}
+
+function pwless_loggedin_destroy_oldest_session($user_id)
+{
+    if (!$user_id) {
+        return;
+    }
+
+    $sessions = get_user_meta($user_id, 'session_tokens', true);
+    if (!is_array($sessions) || empty($sessions)) {
+        return;
+    }
+
+    $oldest_token = '';
+    $oldest_time = time();
+
+    foreach ($sessions as $token => $session) {
+        if (isset($session['login']) && intval($session['login']) < $oldest_time) {
+            $oldest_time = intval($session['login']);
+            $oldest_token = $token;
+        }
+    }
+
+    if ($oldest_token === '') {
+        return;
+    }
+
+    unset($sessions[$oldest_token]);
+    update_user_meta($user_id, 'session_tokens', $sessions);
+
+    do_action('loggedin_destroy_oldest_session', $user_id);
+}
+
+function pwless_apply_loggedin_session_limit($user_id)
+{
+    if (!$user_id || !pwless_is_loggedin_plugin_active()) {
+        return array(
+            'allowed' => true,
+            'message' => '',
+        );
+    }
+
+    $logic = get_option('loggedin_logic', 'allow');
+    if (!in_array($logic, array('allow', 'logout_oldest', 'block'), true)) {
+        $logic = 'allow';
+    }
+
+    if (!pwless_loggedin_has_limit_reached($user_id)) {
+        return array(
+            'allowed' => true,
+            'message' => '',
+        );
+    }
+
+    if ($logic === 'block') {
+        do_action('loggedin_login_blocked', $user_id);
+
+        return array(
+            'allowed' => false,
+            'message' => pwless_loggedin_limit_error_message(),
+        );
+    }
+
+    if ($logic === 'logout_oldest') {
+        pwless_loggedin_destroy_oldest_session($user_id);
+    } else {
+        pwless_loggedin_destroy_all_sessions($user_id);
+    }
+
+    return array(
+        'allowed' => true,
+        'message' => '',
+    );
+}
+
+function pwless_user_can_login_with_loggedin_plugin($user_id)
+{
+    $result = pwless_apply_loggedin_session_limit($user_id);
+    return !empty($result['allowed']);
 }
 
 function pwless_get_admin_generated_link_transient_key($admin_id, $user_id)
@@ -1220,9 +1359,10 @@ function pwless_process_admin_generated_user_link()
         wp_die('Este link já atingiu o limite de usos.', 'Limite atingido', array('response' => 403));
     }
 
-    if (!pwless_user_can_login_with_loggedin_plugin($user_id)) {
+    $loggedin_check = pwless_apply_loggedin_session_limit($user_id);
+    if (!$loggedin_check['allowed']) {
         pwless_log_attempt($email, 'admin_link_bloqueado');
-        wp_die('Você atingiu o limite máximo de logins simultâneos. Aguarde sessões antigas expirarem ou faça logout em outro dispositivo.', 'Login bloqueado', array('response' => 403));
+        wp_die($loggedin_check['message'], 'Login bloqueado', array('response' => 403));
     }
 
     $data['uses'] = intval($data['uses']) + 1;
@@ -1557,11 +1697,9 @@ function pwless_process_passwordless_login_legacy()
             return;
         }
         $user = $validation['user'];
-
-
-
-        if (!pwless_user_can_login_with_loggedin_plugin($user_id)) {
-            echo '<p class="error">Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.</p>';
+        $loggedin_check = pwless_apply_loggedin_session_limit($user_id);
+        if (!$loggedin_check['allowed']) {
+            echo '<p class="error">' . esc_html($loggedin_check['message']) . '</p>';
             return;
         }
 
@@ -1622,10 +1760,11 @@ function pwless_process_passwordless_login_confirmation_post()
 
     $user = $validation['user'];
 
-    if (!pwless_user_can_login_with_loggedin_plugin($user_id)) {
+    $loggedin_check = pwless_apply_loggedin_session_limit($user_id);
+    if (!$loggedin_check['allowed']) {
         pwless_render_passwordless_login_page(array(
             'title' => 'Login bloqueado',
-            'message' => 'Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.',
+            'message' => $loggedin_check['message'],
             'response_code' => 403,
         ));
     }
