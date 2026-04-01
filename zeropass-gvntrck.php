@@ -1385,6 +1385,126 @@ function pwless_validate_passwordless_login($user_id, $token, $nonce)
     return $result;
 }
 
+function pwless_get_request_method()
+{
+    if (!isset($_SERVER['REQUEST_METHOD'])) {
+        return 'GET';
+    }
+
+    return strtoupper(sanitize_text_field(wp_unslash($_SERVER['REQUEST_METHOD'])));
+}
+
+function pwless_render_passwordless_login_page($args = array())
+{
+    $args = wp_parse_args($args, array(
+        'title' => 'Login sem senha',
+        'message' => '',
+        'button_label' => 'Entrar',
+        'show_form' => false,
+        'response_code' => 200,
+        'user_id' => 0,
+        'token' => '',
+        'nonce' => '',
+    ));
+
+    status_header(max(100, intval($args['response_code'])));
+    nocache_headers();
+
+    $site_name = wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES);
+    $home_link = home_url('/');
+    $form_action = site_url('/');
+    ?>
+    <!DOCTYPE html>
+    <html <?php language_attributes(); ?>>
+    <head>
+        <meta charset="<?php bloginfo('charset'); ?>">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="robots" content="noindex, nofollow">
+        <title><?php echo esc_html($args['title']); ?> | <?php echo esc_html($site_name); ?></title>
+        <style>
+            body {
+                margin: 0;
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 24px;
+                background: #f4f7fb;
+                color: #152033;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            }
+            .pwless-card {
+                width: 100%;
+                max-width: 480px;
+                padding: 32px;
+                background: #ffffff;
+                border: 1px solid #d8e0ec;
+                border-radius: 16px;
+                box-shadow: 0 20px 50px rgba(21, 32, 51, 0.08);
+                box-sizing: border-box;
+            }
+            .pwless-card h1 {
+                margin: 0 0 16px;
+                font-size: 28px;
+                line-height: 1.2;
+            }
+            .pwless-card p {
+                margin: 0 0 24px;
+                font-size: 16px;
+                line-height: 1.6;
+            }
+            .pwless-button,
+            .pwless-link {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 100%;
+                min-height: 48px;
+                border-radius: 10px;
+                font-size: 16px;
+                font-weight: 600;
+                text-decoration: none;
+                box-sizing: border-box;
+            }
+            .pwless-button {
+                border: 0;
+                cursor: pointer;
+                background: #152033;
+                color: #ffffff;
+            }
+            .pwless-button:hover {
+                background: #0f1726;
+            }
+            .pwless-link {
+                border: 1px solid #d8e0ec;
+                color: #152033;
+                background: #ffffff;
+            }
+        </style>
+    </head>
+    <body>
+        <main class="pwless-card">
+            <h1><?php echo esc_html($args['title']); ?></h1>
+            <p><?php echo esc_html($args['message']); ?></p>
+
+            <?php if (!empty($args['show_form'])) : ?>
+                <form method="post" action="<?php echo esc_url($form_action); ?>">
+                    <input type="hidden" name="pwless_action" value="confirm_passwordless_login">
+                    <input type="hidden" name="user" value="<?php echo esc_attr(strval(absint($args['user_id']))); ?>">
+                    <input type="hidden" name="passwordless_login" value="<?php echo esc_attr($args['token']); ?>">
+                    <input type="hidden" name="nonce" value="<?php echo esc_attr($args['nonce']); ?>">
+                    <button type="submit" class="pwless-button"><?php echo esc_html($args['button_label']); ?></button>
+                </form>
+            <?php else : ?>
+                <a class="pwless-link" href="<?php echo esc_url($home_link); ?>">Voltar ao site</a>
+            <?php endif; ?>
+        </main>
+    </body>
+    </html>
+    <?php
+    exit;
+}
+
 function pwless_process_passwordless_login_legacy()
 {
     if (isset($_GET['passwordless_login']) && isset($_GET['user']) && isset($_GET['nonce'])) {
@@ -1433,6 +1553,64 @@ function pwless_process_passwordless_login_legacy()
 }
 function pwless_process_passwordless_login()
 {
+    if (is_admin()) {
+        return;
+    }
+
+    $request_method = pwless_get_request_method();
+
+    if ($request_method === 'POST') {
+        $action = isset($_POST['pwless_action']) ? sanitize_key(wp_unslash($_POST['pwless_action'])) : '';
+
+        if ($action !== 'confirm_passwordless_login') {
+            return;
+        }
+
+        $user_id = isset($_POST['user']) ? absint($_POST['user']) : 0;
+        $token = isset($_POST['passwordless_login']) ? sanitize_text_field(wp_unslash($_POST['passwordless_login'])) : '';
+        $nonce = isset($_POST['nonce']) ? sanitize_text_field(wp_unslash($_POST['nonce'])) : '';
+        $validation = pwless_validate_passwordless_login($user_id, $token, $nonce);
+
+        if (!$validation['valid']) {
+            $user = $validation['user'];
+            pwless_log_attempt($user ? $user->user_email : 'unknown', $validation['log_status']);
+            pwless_render_passwordless_login_page(array(
+                'title' => 'Link inválido',
+                'message' => $validation['message'],
+                'response_code' => 403,
+            ));
+        }
+
+        $user = $validation['user'];
+
+        if (!pwless_user_can_login_with_loggedin_plugin($user_id)) {
+            pwless_render_passwordless_login_page(array(
+                'title' => 'Login bloqueado',
+                'message' => 'Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.',
+                'response_code' => 403,
+            ));
+        }
+
+        wp_set_current_user($user_id);
+        wp_set_auth_cookie($user_id);
+
+        if ($user) {
+            do_action('wp_login', $user->user_login, $user);
+        }
+
+        pwless_force_login_tracking($user_id);
+        pwless_mark_passwordless_token_as_used($user_id);
+
+        pwless_log_attempt($user ? $user->user_email : 'unknown', 'login_sucesso');
+
+        wp_safe_redirect(pwless_get_redirect_after_login());
+        exit;
+    }
+
+    if ($request_method !== 'GET') {
+        return;
+    }
+
     if (!isset($_GET['passwordless_login']) || !isset($_GET['user']) || !isset($_GET['nonce'])) {
         return;
     }
@@ -1445,38 +1623,28 @@ function pwless_process_passwordless_login()
     if (!$validation['valid']) {
         $user = $validation['user'];
         pwless_log_attempt($user ? $user->user_email : 'unknown', $validation['log_status']);
-        echo '<p class="error">' . esc_html($validation['message']) . '</p>';
-        return;
+        pwless_render_passwordless_login_page(array(
+            'title' => 'Link inválido',
+            'message' => $validation['message'],
+            'response_code' => 403,
+        ));
     }
 
-    $user = $validation['user'];
-
-    if (!pwless_user_can_login_with_loggedin_plugin($user_id)) {
-        echo '<p class="error">Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.</p>';
-        return;
-    }
-
-    wp_set_current_user($user_id);
-    wp_set_auth_cookie($user_id);
-
-    if ($user) {
-        do_action('wp_login', $user->user_login, $user);
-    }
-
-    pwless_force_login_tracking($user_id);
-
-    pwless_mark_passwordless_token_as_used($user_id);
-
-    pwless_log_attempt($user ? $user->user_email : 'unknown', 'login_sucesso');
-
-    wp_safe_redirect(pwless_get_redirect_after_login());
-    exit;
+    pwless_render_passwordless_login_page(array(
+        'title' => 'Confirmar login',
+        'message' => 'Seu link foi validado. Para concluir o acesso, clique no botão abaixo. O login só será realizado após essa confirmação.',
+        'button_label' => 'Entrar',
+        'show_form' => true,
+        'user_id' => $user_id,
+        'token' => $token,
+        'nonce' => $nonce,
+    ));
 }
 function process_passwordless_login()
 {
     return pwless_process_passwordless_login();
 }
-add_action('init', 'pwless_process_passwordless_login');
+add_action('template_redirect', 'pwless_process_passwordless_login', 1);
 
 // Adiciona menu na área administrativa
 function pwless_admin_menu()
