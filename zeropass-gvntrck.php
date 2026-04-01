@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.1.19
+Version: 4.2.0
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -30,7 +30,7 @@ $myUpdateChecker->setAuthentication('your-token-here');
 
 
 if (!defined('PWLESS_PLUGIN_VERSION')) {
-    define('PWLESS_PLUGIN_VERSION', '4.1.19');
+    define('PWLESS_PLUGIN_VERSION', '4.2.0');
 }
 
 function pwless_get_login_form_redirect_url($args = array())
