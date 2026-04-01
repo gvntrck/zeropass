@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.2.3
+Version: 4.2.4
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -30,7 +30,7 @@ $myUpdateChecker->setAuthentication('your-token-here');
 
 
 if (!defined('PWLESS_PLUGIN_VERSION')) {
-    define('PWLESS_PLUGIN_VERSION', '4.2.3');
+    define('PWLESS_PLUGIN_VERSION', '4.2.4');
 }
 
 function pwless_get_login_form_redirect_url($args = array())
@@ -103,6 +103,40 @@ function pwless_redirect_login_form_with_feedback($message, $email = '')
     exit;
 }
 
+function pwless_get_html_mail_content_type()
+{
+    return 'text/html';
+}
+
+function pwless_get_html_mail_charset()
+{
+    return 'UTF-8';
+}
+
+function pwless_prepare_email_content($content)
+{
+    $content = trim((string) $content);
+
+    if ($content === '') {
+        return '';
+    }
+
+    return wpautop($content);
+}
+
+function pwless_send_html_mail($to, $subject, $content)
+{
+    add_filter('wp_mail_content_type', 'pwless_get_html_mail_content_type');
+    add_filter('wp_mail_charset', 'pwless_get_html_mail_charset');
+
+    $sent = wp_mail($to, $subject, pwless_prepare_email_content($content));
+
+    remove_filter('wp_mail_content_type', 'pwless_get_html_mail_content_type');
+    remove_filter('wp_mail_charset', 'pwless_get_html_mail_charset');
+
+    return $sent;
+}
+
 function pwless_handle_passwordless_login_form_submission()
 {
     if (is_admin()) {
@@ -165,10 +199,9 @@ function pwless_handle_passwordless_login_form_submission()
         $email_template
     );
 
-    $headers = array('Content-Type: text/html; charset=UTF-8');
     $subject = get_option('pwless_email_subject', 'Seu link de login');
 
-    if (wp_mail($email, $subject, $email_content, $headers)) {
+    if (pwless_send_html_mail($email, $subject, $email_content)) {
         pwless_log_attempt($email, 'email_enviado');
         pwless_redirect_login_form_with_feedback(
             "<p class='success'>" . str_replace('{expiry_time}', get_option('pwless_link_expiry', 60), get_option('pwless_success_message')) . "</p>"
@@ -426,10 +459,9 @@ function pwless_reset_password_form()
                     $email_template
                 );
 
-                $headers = array('Content-Type: text/html; charset=UTF-8');
                 $subject = get_option('pwless_reset_email_subject');
 
-                if (wp_mail($email, $subject, $email_content, $headers)) {
+                if (pwless_send_html_mail($email, $subject, $email_content)) {
                     $message = "<p class='success'>" . esc_html(get_option('pwless_reset_success_message')) . "</p>";
                     pwless_log_attempt($email, 'reset_senha_enviada');
                 } else {
