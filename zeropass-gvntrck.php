@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.2.0
+Version: 4.2.1
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -30,7 +30,7 @@ $myUpdateChecker->setAuthentication('your-token-here');
 
 
 if (!defined('PWLESS_PLUGIN_VERSION')) {
-    define('PWLESS_PLUGIN_VERSION', '4.2.0');
+    define('PWLESS_PLUGIN_VERSION', '4.2.1');
 }
 
 function pwless_get_login_form_redirect_url($args = array())
@@ -1100,10 +1100,10 @@ function pwless_render_user_direct_login_card($user)
             <tr>
                 <th>Ações</th>
                 <td>
-                    <button type="button" class="button button-primary pwless-admin-link-action pwless-generate-link-btn">Gerar
-                        link de login</button>
                     <button type="button"
-                        class="button button-secondary pwless-admin-link-action pwless-revoke-link-btn"
+                        class="button button-primary pwless-admin-link-action pwless-generate-link-btn">Gerar
+                        link de login</button>
+                    <button type="button" class="button button-secondary pwless-admin-link-action pwless-revoke-link-btn"
                         style="margin-left:8px;<?php echo $state['has_active_link'] ? '' : 'display:none;'; ?>">Revogar link
                         atual</button>
                     <button type="button" class="button pwless-admin-link-action pwless-copy-link-btn"
@@ -1131,16 +1131,20 @@ function pwless_render_user_direct_login_card($user)
             <tr>
                 <th>Status do link atual</th>
                 <td>
-                    <p class="pwless-no-link-message" style="<?php echo $state['has_active_link'] ? 'display:none;' : ''; ?>">
+                    <p class="pwless-no-link-message"
+                        style="<?php echo $state['has_active_link'] ? 'display:none;' : ''; ?>">
                         <em>Nenhum link foi gerado para este usuário ainda.</em>
                     </p>
-                    <p><strong>Criado em:</strong> <span class="pwless-created-at"><?php echo esc_html($state['created_at']); ?></span>
+                    <p><strong>Criado em:</strong> <span
+                            class="pwless-created-at"><?php echo esc_html($state['created_at']); ?></span>
                     </p>
                     <p><strong>Expira em:</strong> <span
                             class="pwless-expires-at"><?php echo esc_html($state['expires_at']); ?></span></p>
-                    <p><strong>Usos:</strong> <span class="pwless-uses-info"><?php echo esc_html($state['uses_info']); ?></span>
+                    <p><strong>Usos:</strong> <span
+                            class="pwless-uses-info"><?php echo esc_html($state['uses_info']); ?></span>
                     </p>
-                    <p><strong>Último uso:</strong> <span class="pwless-last-used"><?php echo esc_html($state['last_used']); ?></span>
+                    <p><strong>Último uso:</strong> <span
+                            class="pwless-last-used"><?php echo esc_html($state['last_used']); ?></span>
                     </p>
                 </td>
             </tr>
@@ -1385,6 +1389,26 @@ function pwless_validate_passwordless_login($user_id, $token, $nonce)
     return $result;
 }
 
+function pwless_get_passwordless_confirmation_page_defaults()
+{
+    return array(
+        'title' => 'Confirmar login',
+        'message' => 'Seu link foi validado. Para concluir o acesso, clique no botão abaixo. O login só será realizado após essa confirmação.',
+        'button_label' => 'Entrar',
+    );
+}
+
+function pwless_get_passwordless_confirmation_page_settings()
+{
+    $defaults = pwless_get_passwordless_confirmation_page_defaults();
+
+    return array(
+        'title' => get_option('pwless_confirmation_page_title', $defaults['title']),
+        'message' => get_option('pwless_confirmation_page_message', $defaults['message']),
+        'button_label' => get_option('pwless_confirmation_page_button_label', $defaults['button_label']),
+    );
+}
+
 function pwless_get_request_method()
 {
     if (!isset($_SERVER['REQUEST_METHOD'])) {
@@ -1396,10 +1420,12 @@ function pwless_get_request_method()
 
 function pwless_render_passwordless_login_page($args = array())
 {
+    $confirmation_settings = pwless_get_passwordless_confirmation_page_settings();
+
     $args = wp_parse_args($args, array(
-        'title' => 'Login sem senha',
-        'message' => '',
-        'button_label' => 'Entrar',
+        'title' => $confirmation_settings['title'],
+        'message' => $confirmation_settings['message'],
+        'button_label' => $confirmation_settings['button_label'],
         'show_form' => false,
         'response_code' => 200,
         'user_id' => 0,
@@ -1416,6 +1442,7 @@ function pwless_render_passwordless_login_page($args = array())
     ?>
     <!DOCTYPE html>
     <html <?php language_attributes(); ?>>
+
     <head>
         <meta charset="<?php bloginfo('charset'); ?>">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1433,6 +1460,7 @@ function pwless_render_passwordless_login_page($args = array())
                 color: #152033;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             }
+
             .pwless-card {
                 width: 100%;
                 max-width: 480px;
@@ -1443,16 +1471,19 @@ function pwless_render_passwordless_login_page($args = array())
                 box-shadow: 0 20px 50px rgba(21, 32, 51, 0.08);
                 box-sizing: border-box;
             }
+
             .pwless-card h1 {
                 margin: 0 0 16px;
                 font-size: 28px;
                 line-height: 1.2;
             }
+
             .pwless-card p {
                 margin: 0 0 24px;
                 font-size: 16px;
                 line-height: 1.6;
             }
+
             .pwless-button,
             .pwless-link {
                 display: inline-flex;
@@ -1466,15 +1497,18 @@ function pwless_render_passwordless_login_page($args = array())
                 text-decoration: none;
                 box-sizing: border-box;
             }
+
             .pwless-button {
                 border: 0;
                 cursor: pointer;
                 background: #152033;
                 color: #ffffff;
             }
+
             .pwless-button:hover {
                 background: #0f1726;
             }
+
             .pwless-link {
                 border: 1px solid #d8e0ec;
                 color: #152033;
@@ -1482,12 +1516,13 @@ function pwless_render_passwordless_login_page($args = array())
             }
         </style>
     </head>
+
     <body>
         <main class="pwless-card">
             <h1><?php echo esc_html($args['title']); ?></h1>
-            <p><?php echo esc_html($args['message']); ?></p>
+            <p><?php echo nl2br(esc_html($args['message'])); ?></p>
 
-            <?php if (!empty($args['show_form'])) : ?>
+            <?php if (!empty($args['show_form'])): ?>
                 <form method="post" action="<?php echo esc_url($form_action); ?>">
                     <input type="hidden" name="pwless_action" value="confirm_passwordless_login">
                     <input type="hidden" name="user" value="<?php echo esc_attr(strval(absint($args['user_id']))); ?>">
@@ -1495,11 +1530,12 @@ function pwless_render_passwordless_login_page($args = array())
                     <input type="hidden" name="nonce" value="<?php echo esc_attr($args['nonce']); ?>">
                     <button type="submit" class="pwless-button"><?php echo esc_html($args['button_label']); ?></button>
                 </form>
-            <?php else : ?>
+            <?php else: ?>
                 <a class="pwless-link" href="<?php echo esc_url($home_link); ?>">Voltar ao site</a>
             <?php endif; ?>
         </main>
     </body>
+
     </html>
     <?php
     exit;
@@ -1557,6 +1593,7 @@ function pwless_process_passwordless_login()
         return;
     }
 
+    $confirmation_settings = pwless_get_passwordless_confirmation_page_settings();
     $request_method = pwless_get_request_method();
 
     if ($request_method === 'POST') {
@@ -1631,9 +1668,9 @@ function pwless_process_passwordless_login()
     }
 
     pwless_render_passwordless_login_page(array(
-        'title' => 'Confirmar login',
-        'message' => 'Seu link foi validado. Para concluir o acesso, clique no botão abaixo. O login só será realizado após essa confirmação.',
-        'button_label' => 'Entrar',
+        'title' => $confirmation_settings['title'],
+        'message' => $confirmation_settings['message'],
+        'button_label' => $confirmation_settings['button_label'],
         'show_form' => true,
         'user_id' => $user_id,
         'token' => $token,
@@ -1682,6 +1719,9 @@ function pwless_register_settings()
     register_setting('pwless_options', 'pwless_error_message');
     register_setting('pwless_options', 'pwless_enable_logging', 'boolval');
     register_setting('pwless_options', 'pwless_redirect_url', 'esc_url_raw');
+    register_setting('pwless_options', 'pwless_confirmation_page_title');
+    register_setting('pwless_options', 'pwless_confirmation_page_message');
+    register_setting('pwless_options', 'pwless_confirmation_page_button_label');
 
     // Novas configurações para reset de senha
     register_setting('pwless_options', 'pwless_reset_email_subject');
@@ -1724,6 +1764,8 @@ function pwless_settings_page()
         return;
     }
 
+    $confirmation_defaults = pwless_get_passwordless_confirmation_page_defaults();
+
     // Salva as configurações padrão se não existirem
     if (false === get_option('pwless_email_subject')) {
         update_option('pwless_email_subject', 'Seu link de login');
@@ -1735,6 +1777,18 @@ function pwless_settings_page()
         update_option('pwless_error_message', 'Usuário não encontrado.');
         update_option('pwless_enable_logging', true);
         update_option('pwless_redirect_url', home_url());
+    }
+
+    if (false === get_option('pwless_confirmation_page_title')) {
+        update_option('pwless_confirmation_page_title', $confirmation_defaults['title']);
+    }
+
+    if (false === get_option('pwless_confirmation_page_message')) {
+        update_option('pwless_confirmation_page_message', $confirmation_defaults['message']);
+    }
+
+    if (false === get_option('pwless_confirmation_page_button_label')) {
+        update_option('pwless_confirmation_page_button_label', $confirmation_defaults['button_label']);
     }
 
     if (isset($_GET['settings-updated'])) {
@@ -1752,6 +1806,7 @@ function pwless_settings_page()
             <div class="nav-tab-wrapper">
                 <a href="#" class="nav-tab nav-tab-active" data-tab="email">Email</a>
                 <a href="#" class="nav-tab" data-tab="form">Formulário</a>
+                <a href="#" class="nav-tab" data-tab="confirmation">Confirmação</a>
                 <a href="#" class="nav-tab" data-tab="security">Segurança</a>
                 <a href="#" class="nav-tab" data-tab="login-links">Link de login</a>
                 <a href="#" class="nav-tab" data-tab="reset">Reset de Senha</a>
@@ -1823,6 +1878,36 @@ function pwless_settings_page()
                         <td>
                             <input type="text" name="pwless_error_message"
                                 value="<?php echo esc_attr(get_option('pwless_error_message')); ?>" class="regular-text">
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="tab-content" id="confirmation" style="display: none;">
+                <h2>Página de Confirmação</h2>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">Título</th>
+                        <td>
+                            <input type="text" name="pwless_confirmation_page_title"
+                                value="<?php echo esc_attr(get_option('pwless_confirmation_page_title', $confirmation_defaults['title'])); ?>"
+                                class="regular-text">
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Mensagem</th>
+                        <td>
+                            <textarea name="pwless_confirmation_page_message" rows="4"
+                                class="large-text"><?php echo esc_textarea(get_option('pwless_confirmation_page_message', $confirmation_defaults['message'])); ?></textarea>
+                            <p class="description">Texto exibido antes do clique final no botão de entrada.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Texto do Botão</th>
+                        <td>
+                            <input type="text" name="pwless_confirmation_page_button_label"
+                                value="<?php echo esc_attr(get_option('pwless_confirmation_page_button_label', $confirmation_defaults['button_label'])); ?>"
+                                class="regular-text">
                         </td>
                     </tr>
                 </table>
@@ -1981,10 +2066,8 @@ function pwless_settings_page()
                 <div id="pwless-logs-feedback" class="notice inline" style="display:none;">
                     <p></p>
                 </div>
-                <div id="pwless-logs-container"
-                    data-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>"
-                    data-security="<?php echo esc_attr(wp_create_nonce('pwless_fetch_logs')); ?>"
-                    data-current-page="1"
+                <div id="pwless-logs-container" data-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>"
+                    data-security="<?php echo esc_attr(wp_create_nonce('pwless_fetch_logs')); ?>" data-current-page="1"
                     data-per-page="10">
                     <?php echo pwless_render_logs_table_markup(1, 10); ?>
                 </div>
@@ -2447,8 +2530,7 @@ function pwless_render_logs_table_markup($page = 1, $per_page = 10)
         <?php if ($logs_data['total_pages'] > 1): ?>
             <div class="pwless-logs-pagination-buttons">
                 <button type="button" class="button pwless-logs-page-button"
-                    data-page="<?php echo esc_attr(max(1, $logs_data['current_page'] - 1)); ?>"
-                    <?php disabled($logs_data['current_page'] <= 1); ?>>
+                    data-page="<?php echo esc_attr(max(1, $logs_data['current_page'] - 1)); ?>" <?php disabled($logs_data['current_page'] <= 1); ?>>
                     Anterior
                 </button>
                 <?php foreach (pwless_get_logs_page_items($logs_data['current_page'], $logs_data['total_pages']) as $page_item): ?>
@@ -2457,16 +2539,14 @@ function pwless_render_logs_table_markup($page = 1, $per_page = 10)
                     <?php else: ?>
                         <button type="button"
                             class="button pwless-logs-page-button <?php echo $page_item === $logs_data['current_page'] ? 'button-primary' : ''; ?>"
-                            data-page="<?php echo esc_attr($page_item); ?>"
-                            <?php disabled($page_item === $logs_data['current_page']); ?>
+                            data-page="<?php echo esc_attr($page_item); ?>" <?php disabled($page_item === $logs_data['current_page']); ?>
                             <?php echo $page_item === $logs_data['current_page'] ? 'aria-current="page"' : ''; ?>>
                             <?php echo esc_html(number_format_i18n($page_item)); ?>
                         </button>
                     <?php endif; ?>
                 <?php endforeach; ?>
                 <button type="button" class="button pwless-logs-page-button"
-                    data-page="<?php echo esc_attr(min($logs_data['total_pages'], $logs_data['current_page'] + 1)); ?>"
-                    <?php disabled($logs_data['current_page'] >= $logs_data['total_pages']); ?>>
+                    data-page="<?php echo esc_attr(min($logs_data['total_pages'], $logs_data['current_page'] + 1)); ?>" <?php disabled($logs_data['current_page'] >= $logs_data['total_pages']); ?>>
                     Próxima
                 </button>
             </div>
