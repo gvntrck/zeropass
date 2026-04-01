@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.2.1
+Version: 4.2.2
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -30,7 +30,7 @@ $myUpdateChecker->setAuthentication('your-token-here');
 
 
 if (!defined('PWLESS_PLUGIN_VERSION')) {
-    define('PWLESS_PLUGIN_VERSION', '4.2.1');
+    define('PWLESS_PLUGIN_VERSION', '4.2.2');
 }
 
 function pwless_get_login_form_redirect_url($args = array())
@@ -1587,6 +1587,65 @@ function pwless_process_passwordless_login_legacy()
 
     }
 }
+function pwless_process_passwordless_login_confirmation_post()
+{
+    if (is_admin()) {
+        return;
+    }
+
+    $request_method = pwless_get_request_method();
+
+    if ($request_method !== 'POST') {
+        return;
+    }
+
+    $action = isset($_POST['pwless_action']) ? sanitize_key(wp_unslash($_POST['pwless_action'])) : '';
+
+    if ($action !== 'confirm_passwordless_login') {
+        return;
+    }
+
+    $user_id = isset($_POST['user']) ? absint($_POST['user']) : 0;
+    $token = isset($_POST['passwordless_login']) ? sanitize_text_field(wp_unslash($_POST['passwordless_login'])) : '';
+    $nonce = isset($_POST['nonce']) ? sanitize_text_field(wp_unslash($_POST['nonce'])) : '';
+    $validation = pwless_validate_passwordless_login($user_id, $token, $nonce);
+
+    if (!$validation['valid']) {
+        $user = $validation['user'];
+        pwless_log_attempt($user ? $user->user_email : 'unknown', $validation['log_status']);
+        pwless_render_passwordless_login_page(array(
+            'title' => 'Link inválido',
+            'message' => $validation['message'],
+            'response_code' => 403,
+        ));
+    }
+
+    $user = $validation['user'];
+
+    if (!pwless_user_can_login_with_loggedin_plugin($user_id)) {
+        pwless_render_passwordless_login_page(array(
+            'title' => 'Login bloqueado',
+            'message' => 'Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.',
+            'response_code' => 403,
+        ));
+    }
+
+    wp_set_current_user($user_id);
+    wp_set_auth_cookie($user_id);
+
+    if ($user) {
+        do_action('wp_login', $user->user_login, $user);
+    }
+
+    pwless_force_login_tracking($user_id);
+    pwless_mark_passwordless_token_as_used($user_id);
+
+    pwless_log_attempt($user ? $user->user_email : 'unknown', 'login_sucesso');
+
+    wp_safe_redirect(pwless_get_redirect_after_login());
+    exit;
+}
+
 function pwless_process_passwordless_login()
 {
     if (is_admin()) {
@@ -1595,54 +1654,6 @@ function pwless_process_passwordless_login()
 
     $confirmation_settings = pwless_get_passwordless_confirmation_page_settings();
     $request_method = pwless_get_request_method();
-
-    if ($request_method === 'POST') {
-        $action = isset($_POST['pwless_action']) ? sanitize_key(wp_unslash($_POST['pwless_action'])) : '';
-
-        if ($action !== 'confirm_passwordless_login') {
-            return;
-        }
-
-        $user_id = isset($_POST['user']) ? absint($_POST['user']) : 0;
-        $token = isset($_POST['passwordless_login']) ? sanitize_text_field(wp_unslash($_POST['passwordless_login'])) : '';
-        $nonce = isset($_POST['nonce']) ? sanitize_text_field(wp_unslash($_POST['nonce'])) : '';
-        $validation = pwless_validate_passwordless_login($user_id, $token, $nonce);
-
-        if (!$validation['valid']) {
-            $user = $validation['user'];
-            pwless_log_attempt($user ? $user->user_email : 'unknown', $validation['log_status']);
-            pwless_render_passwordless_login_page(array(
-                'title' => 'Link inválido',
-                'message' => $validation['message'],
-                'response_code' => 403,
-            ));
-        }
-
-        $user = $validation['user'];
-
-        if (!pwless_user_can_login_with_loggedin_plugin($user_id)) {
-            pwless_render_passwordless_login_page(array(
-                'title' => 'Login bloqueado',
-                'message' => 'Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.',
-                'response_code' => 403,
-            ));
-        }
-
-        wp_set_current_user($user_id);
-        wp_set_auth_cookie($user_id);
-
-        if ($user) {
-            do_action('wp_login', $user->user_login, $user);
-        }
-
-        pwless_force_login_tracking($user_id);
-        pwless_mark_passwordless_token_as_used($user_id);
-
-        pwless_log_attempt($user ? $user->user_email : 'unknown', 'login_sucesso');
-
-        wp_safe_redirect(pwless_get_redirect_after_login());
-        exit;
-    }
 
     if ($request_method !== 'GET') {
         return;
@@ -1681,6 +1692,7 @@ function process_passwordless_login()
 {
     return pwless_process_passwordless_login();
 }
+add_action('init', 'pwless_process_passwordless_login_confirmation_post', 1);
 add_action('template_redirect', 'pwless_process_passwordless_login', 1);
 
 // Adiciona menu na área administrativa
