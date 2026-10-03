@@ -1581,6 +1581,14 @@ function pwless_get_passwordless_confirmation_page_settings()
     );
 }
 
+function pwless_get_passwordless_confirmation_url()
+{
+    $permalink_structure = get_option('permalink_structure');
+    $prefix = empty($permalink_structure) || strpos($permalink_structure, '/index.php/') === 0 ? '/index.php' : '';
+
+    return home_url($prefix . '/passwordless-confirmar/');
+}
+
 function pwless_get_request_method()
 {
     if (!isset($_SERVER['REQUEST_METHOD'])) {
@@ -1610,7 +1618,7 @@ function pwless_render_passwordless_login_page($args = array())
 
     $site_name = wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES);
     $home_link = home_url('/');
-    $form_action = site_url('/');
+    $form_action = pwless_get_passwordless_confirmation_url();
     ?>
     <!DOCTYPE html>
     <html <?php language_attributes(); ?>>
@@ -1766,6 +1774,13 @@ function pwless_process_passwordless_login_confirmation_post()
     $request_method = pwless_get_request_method();
 
     if ($request_method !== 'POST') {
+        return;
+    }
+
+    // Processa antes do rewrite e dos redirects canônicos, sem alterar suas regras.
+    $request_path = isset($_SERVER['REQUEST_URI']) ? wp_parse_url(wp_unslash($_SERVER['REQUEST_URI']), PHP_URL_PATH) : '';
+    $confirmation_path = wp_parse_url(pwless_get_passwordless_confirmation_url(), PHP_URL_PATH);
+    if ($request_path !== $confirmation_path) {
         return;
     }
 
