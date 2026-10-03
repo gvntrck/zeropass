@@ -4,7 +4,7 @@ Tags: login, passwordless, authentication, security
 Requires at least: 5.0
 Tested up to: 6.4
 Requires PHP: 7.4
-Stable tag: 4.1.18
+Stable tag: 4.2.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,9 @@ Ideal para quem deseja melhorar a experiência do usuário e aumentar a seguran�
 3. Configure os remetentes e opções de e-mail nas configurações do plugin.
 
 == Changelog ==
+
+= 4.2.5 =
+* Isola o POST de confirmação do login em uma rota específica para permitir uma exceção no antispam do WP Cerber.
 
 = 4.1.18 =
 * Adiciona paginação e botão de atualização assíncrona na aba de logs do painel.
