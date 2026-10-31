@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.4.0
+Version: 4.4.1
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -30,7 +30,7 @@ $myUpdateChecker->setAuthentication('your-token-here');
 
 
 if (!defined('PWLESS_PLUGIN_VERSION')) {
-    define('PWLESS_PLUGIN_VERSION', '4.4.0');
+    define('PWLESS_PLUGIN_VERSION', '4.4.1');
 }
 
 function pwless_get_login_form_redirect_url($args = array())
@@ -2746,30 +2746,37 @@ function pwless_settings_page()
                         <th scope="row">Login Sem Senha</th>
                         <td>
                             <code>[passwordless_login]</code>
-                            <p class="description">Use este shortcode para exibir o formulário de login sem senha.</p>
+                            <p class="description">O usuário digita o email e <strong>recebe por email um link de
+                                    acesso</strong>. Ao clicar e confirmar, entra no site sem precisar de senha. A validade do
+                                link é definida na aba Segurança. Se já estiver logado, é redirecionado.</p>
                         </td>
                     </tr>
                     <tr>
                         <th scope="row">Reset de Senha</th>
                         <td>
                             <code>[passwordless_reset]</code>
-                            <p class="description">Use este shortcode para exibir o formulário de reset de senha.</p>
+                            <p class="description">O usuário digita o email, o plugin <strong>gera uma nova senha
+                                    aleatória</strong> e <strong>envia por email a senha em texto</strong> junto com o
+                                link da página de login. A senha antiga deixa de funcionar na hora.</p>
                         </td>
                     </tr>
                     <tr>
                         <th scope="row">Reset por Link</th>
                         <td>
                             <code>[passwordless_reset_link]</code>
-                            <p class="description">Use este shortcode para exibir o formulário de reset de senha via
-                                link enviado por email.</p>
+                            <p class="description">O usuário digita o email e <strong>recebe por email um link para
+                                    redefinir a senha</strong> (nenhuma senha vai no email). Ao abrir o link, nesta
+                                mesma página, ele cria a nova senha, já entra logado e é redirecionado. Opção mais
+                                segura para reset.</p>
                         </td>
                     </tr>
                     <tr>
                         <th scope="row">Alterar Senha</th>
                         <td>
                             <code>[passwordless_change_password]</code>
-                            <p class="description">Formulário para o usuário logado alterar a própria senha sem
-                                recarregar a página.</p>
+                            <p class="description">Para usuário <strong>já logado</strong>: troca a própria senha
+                                digitando a nova duas vezes, sem recarregar a página e sem sair da conta.
+                                <strong>Não envia email.</strong></p>
                         </td>
                     </tr>
                 </table>
