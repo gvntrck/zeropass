@@ -4,7 +4,7 @@ Tags: login, passwordless, authentication, security
 Requires at least: 5.0
 Tested up to: 6.4
 Requires PHP: 7.4
-Stable tag: 4.2.5
+Stable tag: 4.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,10 @@ Ideal para quem deseja melhorar a experiência do usuário e aumentar a seguran�
 3. Configure os remetentes e opções de e-mail nas configurações do plugin.
 
 == Changelog ==
+
+= 4.3.0 =
+* Adiciona o shortcode `[passwordless_change_password]` para o usuário logado alterar a senha via AJAX, mantendo a sessão ativa.
+* Adiciona a aba "Alterar Senha" no painel para configurar os requisitos de força da senha.
 
 = 4.2.5 =
 * Isola o POST de confirmação do login em uma rota específica para permitir uma exceção no antispam do WP Cerber.

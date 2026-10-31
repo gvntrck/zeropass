@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.2.5
+Version: 4.3.0
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -30,7 +30,7 @@ $myUpdateChecker->setAuthentication('your-token-here');
 
 
 if (!defined('PWLESS_PLUGIN_VERSION')) {
-    define('PWLESS_PLUGIN_VERSION', '4.2.5');
+    define('PWLESS_PLUGIN_VERSION', '4.3.0');
 }
 
 function pwless_get_login_form_redirect_url($args = array())
@@ -531,6 +531,181 @@ function pwless_reset_password_form()
     return ob_get_clean();
 }
 add_shortcode('passwordless_reset', 'pwless_reset_password_form');
+
+function pwless_get_password_requirements()
+{
+    $min_length = max(1, intval(get_option('pwless_pw_min_length', 8)));
+    $requirements = array(array('/^.{' . $min_length . ',}$/su', sprintf('Mínimo de %d caracteres', $min_length)));
+    $optional = array(
+        'pwless_pw_require_upper' => array('/\p{Lu}/u', 'Ao menos uma letra maiúscula'),
+        'pwless_pw_require_lower' => array('/\p{Ll}/u', 'Ao menos uma letra minúscula'),
+        'pwless_pw_require_number' => array('/\p{N}/u', 'Ao menos um número'),
+        'pwless_pw_require_special' => array('/[^\p{L}\p{N}]/u', 'Ao menos um caractere especial'),
+    );
+
+    foreach ($optional as $option => $requirement) {
+        if (get_option($option)) {
+            $requirements[] = $requirement;
+        }
+    }
+
+    return $requirements;
+}
+
+function pwless_get_password_errors($password)
+{
+    $errors = array();
+    foreach (pwless_get_password_requirements() as $requirement) {
+        if (!preg_match($requirement[0], $password)) {
+            $errors[] = $requirement[1];
+        }
+    }
+
+    return $errors;
+}
+
+function pwless_change_password_form()
+{
+    if (!is_user_logged_in()) {
+        return '<p class="pwless-change-password-notice">Você precisa estar logado para alterar sua senha.</p>';
+    }
+
+    $password_id = wp_unique_id('pwless_new_password_');
+    $confirm_id = wp_unique_id('pwless_confirm_password_');
+
+    ob_start();
+    ?>
+    <form class="pwless-change-password-form" data-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>">
+        <input type="hidden" name="action" value="pwless_change_password">
+        <input type="hidden" name="security" value="<?php echo esc_attr(wp_create_nonce('pwless_change_password')); ?>">
+        <label for="<?php echo esc_attr($password_id); ?>">Nova senha</label>
+        <input type="password" id="<?php echo esc_attr($password_id); ?>" name="new_password" autocomplete="new-password" required>
+        <label for="<?php echo esc_attr($confirm_id); ?>">Repita a nova senha</label>
+        <input type="password" id="<?php echo esc_attr($confirm_id); ?>" name="confirm_password" autocomplete="new-password" required>
+        <ul class="pwless-password-requirements">
+            <?php foreach (pwless_get_password_requirements() as $requirement): ?>
+                <li><?php echo esc_html($requirement[1]); ?></li>
+            <?php endforeach; ?>
+        </ul>
+        <button type="submit">Salvar</button>
+        <p class="pwless-change-password-message" role="status" aria-live="polite"></p>
+    </form>
+
+    <style>
+        .pwless-change-password-form {
+            max-width: 400px;
+            margin: auto;
+            padding: 1em;
+            border: 1px solid #ccc;
+            border-radius: 1em;
+        }
+
+        .pwless-change-password-form label {
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .pwless-change-password-form input[type="password"],
+        .pwless-change-password-form button {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 12px;
+        }
+
+        .pwless-change-password-form .error {
+            color: red;
+        }
+
+        .pwless-change-password-form .success {
+            color: green;
+        }
+    </style>
+
+    <script>
+        document.querySelectorAll('.pwless-change-password-form').forEach(function (form) {
+            if (form.dataset.ready) {
+                return;
+            }
+            form.dataset.ready = '1';
+
+            form.addEventListener('submit', function (event) {
+                event.preventDefault();
+                var message = form.querySelector('.pwless-change-password-message');
+                var button = form.querySelector('button');
+                var show = function (text, ok) {
+                    message.textContent = text;
+                    message.className = 'pwless-change-password-message ' + (ok ? 'success' : 'error');
+                };
+
+                if (form.elements.new_password.value !== form.elements.confirm_password.value) {
+                    show('As senhas não coincidem.', false);
+                    return;
+                }
+
+                button.disabled = true;
+                fetch(form.dataset.ajaxUrl, { method: 'POST', body: new FormData(form), credentials: 'same-origin' })
+                    .then(function (response) { return response.json(); })
+                    .then(function (result) {
+                        var ok = !!(result && result.success);
+                        show((result && result.data && result.data.message) || 'Não foi possível alterar a senha.', ok);
+                        if (ok) {
+                            form.reset();
+                            form.elements.security.value = result.data.nonce;
+                        }
+                    })
+                    .catch(function () { show('Não foi possível alterar a senha.', false); })
+                    .finally(function () { button.disabled = false; });
+            });
+        });
+    </script>
+    <?php
+    return ob_get_clean();
+}
+add_shortcode('passwordless_change_password', 'pwless_change_password_form');
+
+function pwless_ajax_change_password()
+{
+    check_ajax_referer('pwless_change_password', 'security');
+
+    // Mantém a senha com slashes, como o wp-login.php faz, para o login aceitar a nova senha.
+    $raw_password = isset($_POST['new_password']) ? (string) $_POST['new_password'] : '';
+    $password = wp_unslash($raw_password);
+    $confirm = isset($_POST['confirm_password']) ? wp_unslash((string) $_POST['confirm_password']) : '';
+
+    if ($password !== $confirm) {
+        wp_send_json_error(array('message' => 'As senhas não coincidem.'));
+    }
+
+    if (strpos($password, '\\') !== false) {
+        wp_send_json_error(array('message' => 'A senha não pode conter o caractere "\\".'));
+    }
+
+    $errors = pwless_get_password_errors($password);
+    if (!empty($errors)) {
+        wp_send_json_error(array('message' => 'A senha não atende aos requisitos: ' . implode(', ', $errors) . '.'));
+    }
+
+    $user = wp_get_current_user();
+    // wp_update_user recria o cookie de login do próprio usuário; sincroniza $_COOKIE para gerar o novo nonce.
+    add_action('set_logged_in_cookie', 'pwless_sync_logged_in_cookie');
+    $result = wp_update_user(array('ID' => $user->ID, 'user_pass' => $raw_password));
+
+    if (is_wp_error($result)) {
+        wp_send_json_error(array('message' => $result->get_error_message()));
+    }
+
+    pwless_log_attempt($user->user_email, 'senha_alterada');
+    wp_send_json_success(array(
+        'message' => 'Senha alterada com sucesso.',
+        'nonce' => wp_create_nonce('pwless_change_password'),
+    ));
+}
+add_action('wp_ajax_pwless_change_password', 'pwless_ajax_change_password');
+
+function pwless_sync_logged_in_cookie($cookie)
+{
+    $_COOKIE[LOGGED_IN_COOKIE] = $cookie;
+}
 
 function pwless_get_redirect_after_login()
 {
@@ -1931,6 +2106,13 @@ function pwless_register_settings()
     register_setting('pwless_options', 'pwless_reset_description');
     register_setting('pwless_options', 'pwless_reset_login_url', 'esc_url_raw');
 
+    // Requisitos de força da senha no formulário de alterar senha
+    register_setting('pwless_options', 'pwless_pw_min_length', 'absint');
+    register_setting('pwless_options', 'pwless_pw_require_upper', 'boolval');
+    register_setting('pwless_options', 'pwless_pw_require_lower', 'boolval');
+    register_setting('pwless_options', 'pwless_pw_require_number', 'boolval');
+    register_setting('pwless_options', 'pwless_pw_require_special', 'boolval');
+
     // Configurações do ALTCHA
     register_setting('pwless_options', 'pwless_altcha_hmac_key');
     register_setting('pwless_options', 'pwless_altcha_complexity', 'intval');
@@ -2008,6 +2190,7 @@ function pwless_settings_page()
                 <a href="#" class="nav-tab" data-tab="security">Segurança</a>
                 <a href="#" class="nav-tab" data-tab="login-links">Link de login</a>
                 <a href="#" class="nav-tab" data-tab="reset">Reset de Senha</a>
+                <a href="#" class="nav-tab" data-tab="change-password">Alterar Senha</a>
                 <a href="#" class="nav-tab" data-tab="shortcode">Shortcodes</a>
                 <a href="#" class="nav-tab" data-tab="logs">Logs</a>
                 <a href="#" class="nav-tab" data-tab="sobre">Sobre</a>
@@ -2230,6 +2413,39 @@ function pwless_settings_page()
                 </table>
             </div>
 
+            <div class="tab-content" id="change-password" style="display: none;">
+                <h2>Requisitos de Força da Senha</h2>
+                <p class="description">Aplicados ao formulário <code>[passwordless_change_password]</code>.</p>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">Tamanho Mínimo</th>
+                        <td>
+                            <input type="number" name="pwless_pw_min_length"
+                                value="<?php echo esc_attr(get_option('pwless_pw_min_length', 8)); ?>" min="1" max="128"
+                                class="small-text">
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Exigir</th>
+                        <td>
+                            <?php
+                            $password_rules = array(
+                                'pwless_pw_require_upper' => 'Letra maiúscula',
+                                'pwless_pw_require_lower' => 'Letra minúscula',
+                                'pwless_pw_require_number' => 'Número',
+                                'pwless_pw_require_special' => 'Caractere especial',
+                            );
+                            foreach ($password_rules as $option => $label): ?>
+                                <label style="display:block;">
+                                    <input type="checkbox" name="<?php echo esc_attr($option); ?>" value="1" <?php checked(1, get_option($option), true); ?>>
+                                    <?php echo esc_html($label); ?>
+                                </label>
+                            <?php endforeach; ?>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
             <div class="tab-content" id="shortcode" style="display: none;">
                 <h2>Shortcodes Disponíveis</h2>
                 <table class="form-table">
@@ -2245,6 +2461,14 @@ function pwless_settings_page()
                         <td>
                             <code>[passwordless_reset]</code>
                             <p class="description">Use este shortcode para exibir o formulário de reset de senha.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Alterar Senha</th>
+                        <td>
+                            <code>[passwordless_change_password]</code>
+                            <p class="description">Formulário para o usuário logado alterar a própria senha sem
+                                recarregar a página.</p>
                         </td>
                     </tr>
                 </table>
