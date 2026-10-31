@@ -4,7 +4,7 @@ Tags: login, passwordless, authentication, security
 Requires at least: 5.0
 Tested up to: 6.4
 Requires PHP: 7.4
-Stable tag: 4.3.0
+Stable tag: 4.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -22,6 +22,10 @@ Ideal para quem deseja melhorar a experiência do usuário e aumentar a seguran�
 3. Configure os remetentes e opções de e-mail nas configurações do plugin.
 
 == Changelog ==
+
+= 4.4.0 =
+* Adiciona o shortcode `[passwordless_reset_link]` para redefinição de senha via link enviado por email, sem exibir a senha em texto puro.
+* Adiciona a aba "Reset por Link" no painel para configurar o email, a validade do link e o redirecionamento após a redefinição.
 
 = 4.3.0 =
 * Adiciona o shortcode `[passwordless_change_password]` para o usuário logado alterar a senha via AJAX, mantendo a sessão ativa.

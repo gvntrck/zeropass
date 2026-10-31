@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.3.0
+Version: 4.4.0
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -30,7 +30,7 @@ $myUpdateChecker->setAuthentication('your-token-here');
 
 
 if (!defined('PWLESS_PLUGIN_VERSION')) {
-    define('PWLESS_PLUGIN_VERSION', '4.3.0');
+    define('PWLESS_PLUGIN_VERSION', '4.4.0');
 }
 
 function pwless_get_login_form_redirect_url($args = array())
@@ -706,6 +706,238 @@ function pwless_sync_logged_in_cookie($cookie)
 {
     $_COOKIE[LOGGED_IN_COOKIE] = $cookie;
 }
+
+function pwless_rp_validate_token($user_id, $token)
+{
+    $user_id = intval($user_id);
+    $token = is_string($token) ? $token : '';
+    if ($user_id <= 0 || $token === '') {
+        return false;
+    }
+
+    $hash = get_user_meta($user_id, 'pwless_rp_token', true);
+    if (empty($hash) || !wp_check_password($token, $hash)) {
+        return false;
+    }
+
+    $created = intval(get_user_meta($user_id, 'pwless_rp_token_created', true));
+    $expiry_seconds = intval(get_option('pwless_rp_link_expiry', 60)) * 60;
+    if ($created <= 0 || (time() - $created) > $expiry_seconds) {
+        return false;
+    }
+
+    return get_user_by('ID', $user_id);
+}
+
+function pwless_process_reset_link_form_submission()
+{
+    if (is_admin()) {
+        return;
+    }
+
+    if (!isset($_SERVER['REQUEST_METHOD']) || strtoupper(wp_unslash($_SERVER['REQUEST_METHOD'])) !== 'POST') {
+        return;
+    }
+
+    if (!isset($_POST['pwless_rp_nonce'], $_POST['pwless_rp_token'], $_POST['pwless_rp_user'])) {
+        return;
+    }
+
+    if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['pwless_rp_nonce'])), 'pwless_rp_set_password')) {
+        $GLOBALS['pwless_rp_error'] = 'Erro de validação. Por favor, tente novamente.';
+        return;
+    }
+
+    $user_id = absint($_POST['pwless_rp_user']);
+    $token = sanitize_text_field(wp_unslash($_POST['pwless_rp_token']));
+    $user = pwless_rp_validate_token($user_id, $token);
+    if (!$user) {
+        $GLOBALS['pwless_rp_error'] = 'Link inválido ou expirado. Solicite um novo.';
+        return;
+    }
+
+    // Mantém a senha com slashes, como o wp-login.php faz, para o login aceitar a nova senha.
+    $raw_password = isset($_POST['new_password']) ? (string) $_POST['new_password'] : '';
+    $password = wp_unslash($raw_password);
+    $confirm = isset($_POST['confirm_password']) ? wp_unslash((string) $_POST['confirm_password']) : '';
+
+    if ($password !== $confirm) {
+        $GLOBALS['pwless_rp_error'] = 'As senhas não coincidem.';
+        return;
+    }
+
+    if (strpos($password, '\\') !== false) {
+        $GLOBALS['pwless_rp_error'] = 'A senha não pode conter o caractere "\\".';
+        return;
+    }
+
+    $errors = pwless_get_password_errors($password);
+    if (!empty($errors)) {
+        $GLOBALS['pwless_rp_error'] = 'A senha não atende aos requisitos: ' . implode(', ', $errors) . '.';
+        return;
+    }
+
+    delete_user_meta($user->ID, 'pwless_rp_token');
+    delete_user_meta($user->ID, 'pwless_rp_token_created');
+    reset_password($user, $raw_password);
+
+    $loggedin_check = pwless_apply_loggedin_session_limit($user->ID);
+    if (!$loggedin_check['allowed']) {
+        pwless_log_attempt($user->user_email, 'reset_link_bloqueado');
+        wp_die($loggedin_check['message'], 'Login bloqueado', array('response' => 403));
+    }
+
+    wp_set_current_user($user->ID);
+    wp_set_auth_cookie($user->ID);
+    do_action('wp_login', $user->user_login, $user);
+    pwless_force_login_tracking($user->ID);
+    pwless_log_attempt($user->user_email, 'reset_link_senha_alterada');
+
+    $redirect_url = get_option('pwless_rp_redirect_url');
+    if (empty($redirect_url)) {
+        $redirect_url = pwless_get_redirect_after_login();
+    }
+
+    wp_safe_redirect($redirect_url);
+    exit;
+}
+add_action('template_redirect', 'pwless_process_reset_link_form_submission');
+
+// Função para exibir o formulário de reset de senha via link
+function pwless_reset_link_form()
+{
+    $message = '';
+    $email = '';
+
+    if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['user_email'], $_POST['pwless_rp_nonce_field']) && check_admin_referer('pwless_rp_request', 'pwless_rp_nonce_field')) {
+        $email = sanitize_email(wp_unslash($_POST['user_email']));
+
+        if (!is_email($email)) {
+            $message = "<p class='error'>Por favor, insira um endereço de e-mail válido.</p>";
+            pwless_log_attempt($email, 'reset_link_erro_email_invalido');
+        } else {
+            $user = get_user_by('email', $email);
+            if (!$user) {
+                $message = "<p class='success'>Se o e-mail estiver cadastrado, você receberá um link para redefinir sua senha.</p>";
+                pwless_log_attempt($email, 'reset_link_usuario_nao_encontrado');
+            } else {
+                $token = wp_generate_password(32, false);
+                update_user_meta($user->ID, 'pwless_rp_token', wp_hash_password($token));
+                update_user_meta($user->ID, 'pwless_rp_token_created', time());
+
+                $reset_url = add_query_arg(array(
+                    'pwless_rp' => $token,
+                    'pwless_rp_user' => $user->ID,
+                ), get_permalink());
+
+                $expiry = intval(get_option('pwless_rp_link_expiry', 60));
+                $email_template = get_option('pwless_rp_email_template', '<a href="{reset_url}">Clique aqui para definir uma nova senha</a><br><br>O link tem validade de {expiry_time} minuto(s).');
+                $email_content = str_replace(
+                    array('{reset_url}', '{expiry_time}'),
+                    array($reset_url, $expiry),
+                    $email_template
+                );
+
+                $subject = get_option('pwless_rp_email_subject', 'Redefina sua senha');
+
+                if (pwless_send_html_mail($email, $subject, $email_content)) {
+                    $message = "<p class='success'>Se o e-mail estiver cadastrado, você receberá um link para redefinir sua senha.</p>";
+                    pwless_log_attempt($email, 'reset_link_enviado');
+                } else {
+                    $message = "<p class='error'>Erro ao enviar email.</p>";
+                    pwless_log_attempt($email, 'reset_link_erro_envio_email');
+                }
+            }
+        }
+    }
+
+    $token = isset($_GET['pwless_rp']) ? sanitize_text_field(wp_unslash($_GET['pwless_rp'])) : '';
+    $token_user_id = isset($_GET['pwless_rp_user']) ? absint($_GET['pwless_rp_user']) : 0;
+    $token_valid = ($token !== '' && $token_user_id > 0) ? pwless_rp_validate_token($token_user_id, $token) : false;
+
+    if ($token !== '' && !$token_valid) {
+        $message = "<p class='error'>Link inválido ou expirado. Solicite um novo.</p>";
+    }
+
+    ob_start();
+    ?>
+    <form method="post" class="reset-password-form"<?php echo $token_valid ? '' : ' onsubmit="showLoader()"'; ?>>
+        <?php if ($token_valid): ?>
+            <?php wp_nonce_field('pwless_rp_set_password', 'pwless_rp_nonce'); ?>
+            <input type="hidden" name="pwless_rp_token" value="<?php echo esc_attr($token); ?>">
+            <input type="hidden" name="pwless_rp_user" value="<?php echo esc_attr($token_user_id); ?>">
+            <h3>Defina sua nova senha</h3>
+            <label for="pwless_rp_new_password">Nova senha</label>
+            <input type="password" id="pwless_rp_new_password" name="new_password" autocomplete="new-password" required>
+            <label for="pwless_rp_confirm_password">Repita a nova senha</label>
+            <input type="password" id="pwless_rp_confirm_password" name="confirm_password" autocomplete="new-password" required>
+            <ul class="pwless-password-requirements">
+                <?php foreach (pwless_get_password_requirements() as $requirement): ?>
+                    <li><?php echo esc_html($requirement[1]); ?></li>
+                <?php endforeach; ?>
+            </ul>
+            <input type="submit" value="Salvar nova senha">
+            <?php if (!empty($GLOBALS['pwless_rp_error'])): ?>
+                <p class="error"><?php echo esc_html($GLOBALS['pwless_rp_error']); ?></p>
+            <?php endif; ?>
+        <?php else: ?>
+            <?php wp_nonce_field('pwless_rp_request', 'pwless_rp_nonce_field'); ?>
+            <h3>Redefinir Senha</h3>
+            <label for="user_email">Endereço de e-mail:</label>
+            <input type="email" id="user_email" name="user_email" value="<?php echo esc_attr($email); ?>" required>
+            <input type="submit" value="Enviar link de redefinição">
+            <div id="loader" style="display:none;">Enviando... <img
+                    src="<?php echo plugins_url('assets/loading.gif', __FILE__); ?>" alt="Carregando"></div>
+            <?php echo wp_kses_post($message); ?>
+        <?php endif; ?>
+    </form>
+
+    <style>
+        .reset-password-form {
+            max-width: 400px;
+            margin: auto;
+            padding: 1em;
+            border: 1px solid #ccc;
+            border-radius: 1em;
+        }
+
+        .reset-password-form label {
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .reset-password-form input[type="email"],
+        .reset-password-form input[type="password"],
+        .reset-password-form input[type="submit"] {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 12px;
+        }
+
+        .reset-password-form .error {
+            color: red;
+        }
+
+        .reset-password-form .success {
+            color: green;
+        }
+
+        #loader img {
+            text-align: center;
+            margin-top: 10px;
+            height: 25px;
+        }
+    </style>
+
+    <script>
+        function showLoader() {
+            document.getElementById('loader').style.display = 'block';
+        }
+    </script>
+    <?php
+    return ob_get_clean();
+}
+add_shortcode('passwordless_reset_link', 'pwless_reset_link_form');
 
 function pwless_get_redirect_after_login()
 {
@@ -2106,6 +2338,12 @@ function pwless_register_settings()
     register_setting('pwless_options', 'pwless_reset_description');
     register_setting('pwless_options', 'pwless_reset_login_url', 'esc_url_raw');
 
+    // Reset de senha via link enviado por email
+    register_setting('pwless_options', 'pwless_rp_email_subject');
+    register_setting('pwless_options', 'pwless_rp_email_template');
+    register_setting('pwless_options', 'pwless_rp_link_expiry', 'absint');
+    register_setting('pwless_options', 'pwless_rp_redirect_url', 'esc_url_raw');
+
     // Requisitos de força da senha no formulário de alterar senha
     register_setting('pwless_options', 'pwless_pw_min_length', 'absint');
     register_setting('pwless_options', 'pwless_pw_require_upper', 'boolval');
@@ -2190,6 +2428,7 @@ function pwless_settings_page()
                 <a href="#" class="nav-tab" data-tab="security">Segurança</a>
                 <a href="#" class="nav-tab" data-tab="login-links">Link de login</a>
                 <a href="#" class="nav-tab" data-tab="reset">Reset de Senha</a>
+                <a href="#" class="nav-tab" data-tab="reset-link">Reset por Link</a>
                 <a href="#" class="nav-tab" data-tab="change-password">Alterar Senha</a>
                 <a href="#" class="nav-tab" data-tab="shortcode">Shortcodes</a>
                 <a href="#" class="nav-tab" data-tab="logs">Logs</a>
@@ -2413,9 +2652,63 @@ function pwless_settings_page()
                 </table>
             </div>
 
+            <div class="tab-content" id="reset-link" style="display: none;">
+                <h2>Configurações de Reset por Link</h2>
+                <p class="description">Usado pelo shortcode <code>[passwordless_reset_link]</code>. As regras de força da
+                    nova senha são configuradas na aba "Alterar Senha".</p>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">Assunto do Email</th>
+                        <td>
+                            <input type="text" name="pwless_rp_email_subject"
+                                value="<?php echo esc_attr(get_option('pwless_rp_email_subject', 'Redefina sua senha')); ?>"
+                                class="regular-text">
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Template do Email</th>
+                        <td>
+                            <?php
+                            wp_editor(
+                                get_option('pwless_rp_email_template', '<a href="{reset_url}">Clique aqui para definir uma nova senha</a><br><br>O link tem validade de {expiry_time} minuto(s).'),
+                                'pwless_rp_email_template',
+                                array(
+                                    'textarea_name' => 'pwless_rp_email_template',
+                                    'textarea_rows' => 10,
+                                    'media_buttons' => false
+                                )
+                            );
+                            ?>
+                            <p class="description">
+                                Variáveis disponíveis: {reset_url}, {expiry_time}
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Validade do Link (minutos)</th>
+                        <td>
+                            <input type="number" name="pwless_rp_link_expiry"
+                                value="<?php echo esc_attr(get_option('pwless_rp_link_expiry', 60)); ?>" min="1"
+                                class="small-text">
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">URL de Redirecionamento</th>
+                        <td>
+                            <input type="url" name="pwless_rp_redirect_url"
+                                value="<?php echo esc_url(get_option('pwless_rp_redirect_url')); ?>"
+                                class="regular-text">
+                            <p class="description">Para onde o usuário é enviado após definir a nova senha. Vazio usa o
+                                redirecionamento padrão de login.</p>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
             <div class="tab-content" id="change-password" style="display: none;">
                 <h2>Requisitos de Força da Senha</h2>
-                <p class="description">Aplicados ao formulário <code>[passwordless_change_password]</code>.</p>
+                <p class="description">Aplicados aos formulários <code>[passwordless_change_password]</code> e
+                    <code>[passwordless_reset_link]</code>.</p>
                 <table class="form-table">
                     <tr>
                         <th scope="row">Tamanho Mínimo</th>
@@ -2461,6 +2754,14 @@ function pwless_settings_page()
                         <td>
                             <code>[passwordless_reset]</code>
                             <p class="description">Use este shortcode para exibir o formulário de reset de senha.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Reset por Link</th>
+                        <td>
+                            <code>[passwordless_reset_link]</code>
+                            <p class="description">Use este shortcode para exibir o formulário de reset de senha via
+                                link enviado por email.</p>
                         </td>
                     </tr>
                     <tr>
