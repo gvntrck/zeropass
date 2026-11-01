@@ -13,6 +13,7 @@ foreach (array('pwless_get_password_requirements' => 'pwless_get_password_errors
     check($start !== false && $end !== false, 'Função ausente: ' . $name);
     eval(substr($source, $start, $end - $start));
 }
+function pwless_front_text($text) { return $text; }
 $options = array();
 function get_option($key, $default = false) { global $options; return $options[$key] ?? $default; }
 

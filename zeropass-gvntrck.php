@@ -3,7 +3,7 @@
 Plugin Name: ZeroPass Login
 Plugin URI: https://github.com/gvntrck/zeropass
 Description: Login sem complicações. Com o ZeroPass Login, seus usuários acessam sua plataforma com links seguros enviados por e-mail. Sem senhas, sem estresse – apenas segurança e simplicidade.
-Version: 4.4.1
+Version: 4.5.0
 Author: Giovani Tureck - gvntrck
 Author URI: https://projetoalfa.org
 License: GPL v2 or later
@@ -30,7 +30,93 @@ $myUpdateChecker->setAuthentication('your-token-here');
 
 
 if (!defined('PWLESS_PLUGIN_VERSION')) {
-    define('PWLESS_PLUGIN_VERSION', '4.4.1');
+    define('PWLESS_PLUGIN_VERSION', '4.5.0');
+}
+
+function pwless_front_text($text)
+{
+    if (!preg_match('/^en(?:_|$)/i', get_locale())) {
+        return $text;
+    }
+
+    $translations = array(
+        'Digite seu email:' => 'Enter your email:',
+        'Enviar link' => 'Send link',
+        'Seu link de login' => 'Your login link',
+        '<a href="{login_url}">Clique aqui para fazer login</a><br><br>O link tem validade de {expiry_time} minuto(s).' => '<a href="{login_url}">Click here to log in</a><br><br>The link is valid for {expiry_time} minute(s).',
+        'Link enviado para o email. O link tem validade de {expiry_time} minuto(s).' => 'A link has been sent to your email. It is valid for {expiry_time} minute(s).',
+        'Usuário não encontrado.' => 'User not found.',
+        'Sua nova senha' => 'Your new password',
+        'Sua nova senha é: {new_password}<br><br>
+            <a href="{login_url}" target="_blank">Clique aqui para fazer o login</a><br><br>
+            Essa é uma senha temporária, após fazer o login por favor, altere sua senha assim que possível.' => 'Your new password is: {new_password}<br><br><a href="{login_url}" target="_blank">Click here to log in</a><br><br>This password is temporary. Please change it as soon as possible after logging in.',
+        'Uma nova senha foi enviada para seu endereço de e-mail.' => 'A new password has been sent to your email address.',
+        'Endereço de e-mail não encontrado.' => 'Email address not found.',
+        'Enviar nova senha' => 'Send new password',
+        'Resetar Senha' => 'Reset Password',
+        'Sua senha será alterada e enviada para seu email.' => 'Your password will be changed and sent to your email.',
+        'Redefina sua senha' => 'Reset your password',
+        '<a href="{reset_url}">Clique aqui para definir uma nova senha</a><br><br>O link tem validade de {expiry_time} minuto(s).' => '<a href="{reset_url}">Click here to set a new password</a><br><br>The link is valid for {expiry_time} minute(s).',
+        'Confirmar login' => 'Confirm login',
+        'Seu link foi validado. Para concluir o acesso, clique no botão abaixo. O login só será realizado após essa confirmação.' => 'Your link has been validated. Click the button below to complete your login.',
+        'Entrar' => 'Log in',
+        'Erro de validação. Por favor, tente novamente.' => 'Validation failed. Please try again.',
+        'Verificação anti-spam falhou. Por favor, tente novamente.' => 'Anti-spam verification failed. Please try again.',
+        'Email inválido.' => 'Invalid email address.',
+        'Erro ao enviar email.' => 'Could not send email.',
+        'Você já está logado!' => 'You are already logged in!',
+        'Você será redirecionado em' => 'You will be redirected in',
+        'segundos...' => 'seconds...',
+        'Ir para a página agora' => 'Go to the page now',
+        'Por favor, insira um endereço de e-mail válido.' => 'Please enter a valid email address.',
+        'Endereço de e-mail:' => 'Email address:',
+        'Enviando...' => 'Sending...',
+        'Carregando' => 'Loading',
+        'Mínimo de %d caracteres' => 'At least %d characters',
+        'Ao menos uma letra maiúscula' => 'At least one uppercase letter',
+        'Ao menos uma letra minúscula' => 'At least one lowercase letter',
+        'Ao menos um número' => 'At least one number',
+        'Ao menos um caractere especial' => 'At least one special character',
+        'Você precisa estar logado para alterar sua senha.' => 'You must be logged in to change your password.',
+        'Nova senha' => 'New password',
+        'Repita a nova senha' => 'Confirm new password',
+        'Salvar' => 'Save',
+        'As senhas não coincidem.' => 'Passwords do not match.',
+        'Não foi possível alterar a senha.' => 'Could not change the password.',
+        'A senha não pode conter o caractere "\\".' => 'The password cannot contain a backslash.',
+        'A senha não atende aos requisitos: ' => 'The password does not meet the requirements: ',
+        'Senha alterada com sucesso.' => 'Password changed successfully.',
+        'Link inválido ou expirado. Solicite um novo.' => 'Invalid or expired link. Please request a new one.',
+        'Se o e-mail estiver cadastrado, você receberá um link para redefinir sua senha.' => 'If the email address is registered, you will receive a password reset link.',
+        'Defina sua nova senha' => 'Set your new password',
+        'Salvar nova senha' => 'Save new password',
+        'Redefinir Senha' => 'Reset Password',
+        'Enviar link de redefinição' => 'Send reset link',
+        'Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.' => 'You have reached the maximum number of simultaneous logins. Please wait for an existing session to expire or log out on another device.',
+        'Link inválido. Solicite um novo link de acesso.' => 'Invalid link. Please request a new login link.',
+        'Link inválido: usuário não identificado.' => 'Invalid link: user not identified.',
+        'Link inválido: usuário não encontrado.' => 'Invalid link: user not found.',
+        'Link inválido: token de acesso ausente.' => 'Invalid link: access token missing.',
+        'Link inválido: assinatura de segurança ausente.' => 'Invalid link: security signature missing.',
+        'Este link já foi utilizado. Solicite um novo link de acesso.' => 'This link has already been used. Please request a new login link.',
+        'Este link é antigo e já existe um link mais recente para este usuário. Utilize o link mais recente ou solicite outro link de acesso.' => 'A newer link exists for this user. Use the latest link or request a new one.',
+        'Este link não é mais válido porque não existe um token ativo para este usuário.' => 'This link is no longer valid because there is no active token for this user.',
+        'Link inválido: data de criação do token ausente ou inválida.' => 'Invalid link: token creation date is missing or invalid.',
+        'Link inválido: assinatura de segurança inválida.' => 'Invalid link: invalid security signature.',
+        'Este link não corresponde ao token mais recente gerado para este usuário.' => 'This link does not match the latest token generated for this user.',
+        'Link inválido: a data de criação do token é inválida.' => 'Invalid link: invalid token creation date.',
+        'Link expirado. Por favor, solicite um novo link de acesso.' => 'Link expired. Please request a new login link.',
+        'Link inválido' => 'Invalid link',
+        'Login bloqueado' => 'Login blocked',
+        'Voltar ao site' => 'Back to site',
+        'Link inválido. Solicite um novo link ao administrador.' => 'Invalid link. Please request a new link from the administrator.',
+        'Este link expirou. Solicite um novo link ao administrador.' => 'This link has expired. Please request a new link from the administrator.',
+        'Este link já atingiu o limite de usos.' => 'This link has reached its usage limit.',
+        'Link expirado' => 'Link expired',
+        'Limite atingido' => 'Usage limit reached',
+    );
+
+    return isset($translations[$text]) ? $translations[$text] : $text;
 }
 
 function pwless_get_login_form_redirect_url($args = array())
@@ -153,7 +239,7 @@ function pwless_handle_passwordless_login_form_submission()
 
     $nonce = sanitize_text_field(wp_unslash($_POST['pwless_nonce']));
     if (!wp_verify_nonce($nonce, 'pwless_login_action')) {
-        pwless_redirect_login_form_with_feedback('<div class="error">Erro de validação. Por favor, tente novamente.</div>');
+        pwless_redirect_login_form_with_feedback('<div class="error">' . esc_html(pwless_front_text('Erro de validação. Por favor, tente novamente.')) . '</div>');
     }
 
     if (get_option('pwless_enable_altcha')) {
@@ -162,20 +248,20 @@ function pwless_handle_passwordless_login_form_submission()
         if (empty($altcha_payload) || !pwless_altcha_verify($altcha_payload)) {
             $email = isset($_POST['user_email']) ? sanitize_email(wp_unslash($_POST['user_email'])) : '';
             pwless_log_attempt($email, 'Falha - ALTCHA inválido');
-            pwless_redirect_login_form_with_feedback('<div class="error">Verificação anti-spam falhou. Por favor, tente novamente.</div>', $email);
+            pwless_redirect_login_form_with_feedback('<div class="error">' . esc_html(pwless_front_text('Verificação anti-spam falhou. Por favor, tente novamente.')) . '</div>', $email);
         }
     }
 
     $email = sanitize_email(wp_unslash($_POST['user_email']));
     if (!is_email($email)) {
         pwless_log_attempt($email, 'erro_email_invalido');
-        pwless_redirect_login_form_with_feedback("<p class='error'>Email inválido.</p>", $email);
+        pwless_redirect_login_form_with_feedback("<p class='error'>" . esc_html(pwless_front_text('Email inválido.')) . "</p>", $email);
     }
 
     $user = get_user_by('email', $email);
     if (!$user) {
         pwless_log_attempt($email, 'usuario_nao_encontrado');
-        pwless_redirect_login_form_with_feedback("<p class='error'>" . get_option('pwless_error_message') . "</p>", $email);
+        pwless_redirect_login_form_with_feedback("<p class='error'>" . pwless_front_text(get_option('pwless_error_message')) . "</p>", $email);
     }
 
     $token = wp_generate_password(20, false);
@@ -192,24 +278,24 @@ function pwless_handle_passwordless_login_form_submission()
     ), site_url());
 
     $expiry_seconds = get_option('pwless_link_expiry', 60) * 60; // Convertendo minutos para segundos
-    $email_template = get_option('pwless_email_template');
+    $email_template = pwless_front_text(get_option('pwless_email_template'));
     $email_content = str_replace(
         array('{login_url}', '{expiry_time}'),
         array($login_url, get_option('pwless_link_expiry', 60)), // Mostrando em minutos
         $email_template
     );
 
-    $subject = get_option('pwless_email_subject', 'Seu link de login');
+    $subject = pwless_front_text(get_option('pwless_email_subject', 'Seu link de login'));
 
     if (pwless_send_html_mail($email, $subject, $email_content)) {
         pwless_log_attempt($email, 'email_enviado');
         pwless_redirect_login_form_with_feedback(
-            "<p class='success'>" . str_replace('{expiry_time}', get_option('pwless_link_expiry', 60), get_option('pwless_success_message')) . "</p>"
+            "<p class='success'>" . str_replace('{expiry_time}', get_option('pwless_link_expiry', 60), pwless_front_text(get_option('pwless_success_message'))) . "</p>"
         );
     }
 
     pwless_log_attempt($email, 'erro_envio_email');
-    pwless_redirect_login_form_with_feedback("<p class='error'>Erro ao enviar email.</p>", $email);
+    pwless_redirect_login_form_with_feedback("<p class='error'>" . esc_html(pwless_front_text('Erro ao enviar email.')) . "</p>", $email);
 }
 add_action('template_redirect', 'pwless_handle_passwordless_login_form_submission');
 
@@ -221,9 +307,9 @@ function passwordless_login_form()
         ob_start();
         ?>
         <div class="already-logged-in">
-            <p>Você já está logado!</p>
-            <p>Você será redirecionado em <span id="countdown">5</span> segundos...</p>
-            <a href="<?php echo esc_url($redirect_url); ?>" class="redirect-button">Ir para a página agora</a>
+            <p><?php echo esc_html(pwless_front_text('Você já está logado!')); ?></p>
+            <p><?php echo esc_html(pwless_front_text('Você será redirecionado em')); ?> <span id="countdown">5</span> <?php echo esc_html(pwless_front_text('segundos...')); ?></p>
+            <a href="<?php echo esc_url($redirect_url); ?>" class="redirect-button"><?php echo esc_html(pwless_front_text('Ir para a página agora')); ?></a>
         </div>
 
         <style>
@@ -279,8 +365,8 @@ function passwordless_login_form()
 
 function display_login_form($message = '', $email = '')
 {
-    $form_email_label = get_option('pwless_form_email_label', 'Digite seu email:');
-    $form_button_text = get_option('pwless_form_button_text', 'Enviar link');
+    $form_email_label = pwless_front_text(get_option('pwless_form_email_label', 'Digite seu email:'));
+    $form_button_text = pwless_front_text(get_option('pwless_form_button_text', 'Enviar link'));
     $enable_altcha = get_option('pwless_enable_altcha');
 
     ob_start();
@@ -384,9 +470,9 @@ function pwless_reset_password_form()
         ob_start();
         ?>
         <div class="already-logged-in">
-            <p>Você já está logado!</p>
-            <p>Você será redirecionado em <span id="countdown">5</span> segundos...</p>
-            <a href="<?php echo esc_url($redirect_url); ?>" class="redirect-button">Ir para a página agora</a>
+            <p><?php echo esc_html(pwless_front_text('Você já está logado!')); ?></p>
+            <p><?php echo esc_html(pwless_front_text('Você será redirecionado em')); ?> <span id="countdown">5</span> <?php echo esc_html(pwless_front_text('segundos...')); ?></p>
+            <a href="<?php echo esc_url($redirect_url); ?>" class="redirect-button"><?php echo esc_html(pwless_front_text('Ir para a página agora')); ?></a>
         </div>
 
         <style>
@@ -440,32 +526,32 @@ function pwless_reset_password_form()
         $email = sanitize_email($_POST['user_email']);
 
         if (!is_email($email)) {
-            $message = "<p class='error'>Por favor, insira um endereço de e-mail válido.</p>";
+            $message = "<p class='error'>" . esc_html(pwless_front_text('Por favor, insira um endereço de e-mail válido.')) . "</p>";
             pwless_log_attempt($email, 'reset_erro_email_invalido');
         } else {
             $user = get_user_by('email', $email);
             if (!$user) {
-                $message = "<p class='error'>" . esc_html(get_option('pwless_reset_error_message')) . "</p>";
+                $message = "<p class='error'>" . esc_html(pwless_front_text(get_option('pwless_reset_error_message'))) . "</p>";
                 pwless_log_attempt($email, 'reset_usuario_nao_encontrado');
             } else {
                 $new_password = wp_generate_password(12, false);
                 wp_set_password($new_password, $user->ID);
 
                 $login_url = get_option('pwless_reset_login_url', home_url());
-                $email_template = get_option('pwless_reset_email_template');
+                $email_template = pwless_front_text(get_option('pwless_reset_email_template'));
                 $email_content = str_replace(
                     array('{new_password}', '{login_url}'),
                     array($new_password, $login_url),
                     $email_template
                 );
 
-                $subject = get_option('pwless_reset_email_subject');
+                $subject = pwless_front_text(get_option('pwless_reset_email_subject'));
 
                 if (pwless_send_html_mail($email, $subject, $email_content)) {
-                    $message = "<p class='success'>" . esc_html(get_option('pwless_reset_success_message')) . "</p>";
+                    $message = "<p class='success'>" . esc_html(pwless_front_text(get_option('pwless_reset_success_message'))) . "</p>";
                     pwless_log_attempt($email, 'reset_senha_enviada');
                 } else {
-                    $message = "<p class='error'>Erro ao enviar email.</p>";
+                    $message = "<p class='error'>" . esc_html(pwless_front_text('Erro ao enviar email.')) . "</p>";
                     pwless_log_attempt($email, 'reset_erro_envio_email');
                 }
             }
@@ -476,13 +562,13 @@ function pwless_reset_password_form()
     ?>
     <form method="post" class="reset-password-form" onsubmit="showLoader()">
         <?php wp_nonce_field('pwless_reset_nonce', 'pwless_reset_nonce_field'); ?>
-        <h3><?php echo esc_html(get_option('pwless_reset_form_title')); ?></h3>
-        <label for="user_email">Endereço de e-mail:</label>
+        <h3><?php echo esc_html(pwless_front_text(get_option('pwless_reset_form_title'))); ?></h3>
+        <label for="user_email"><?php echo esc_html(pwless_front_text('Endereço de e-mail:')); ?></label>
         <input type="email" id="user_email" name="user_email" value="<?php echo esc_attr($email); ?>" required>
-        <input type="submit" value="<?php echo esc_attr(get_option('pwless_reset_button_text')); ?>">
-        <div><?php echo esc_html(get_option('pwless_reset_description')); ?></div>
-        <div id="loader" style="display:none;">Enviando... <img
-                src="<?php echo plugins_url('assets/loading.gif', __FILE__); ?>" alt="Carregando"></div>
+        <input type="submit" value="<?php echo esc_attr(pwless_front_text(get_option('pwless_reset_button_text'))); ?>">
+        <div><?php echo esc_html(pwless_front_text(get_option('pwless_reset_description'))); ?></div>
+        <div id="loader" style="display:none;"><?php echo esc_html(pwless_front_text('Enviando...')); ?> <img
+                src="<?php echo plugins_url('assets/loading.gif', __FILE__); ?>" alt="<?php echo esc_attr(pwless_front_text('Carregando')); ?>"></div>
         <?php echo wp_kses_post($message); ?>
     </form>
 
@@ -535,7 +621,7 @@ add_shortcode('passwordless_reset', 'pwless_reset_password_form');
 function pwless_get_password_requirements()
 {
     $min_length = max(1, intval(get_option('pwless_pw_min_length', 8)));
-    $requirements = array(array('/^.{' . $min_length . ',}$/su', sprintf('Mínimo de %d caracteres', $min_length)));
+    $requirements = array(array('/^.{' . $min_length . ',}$/su', sprintf(pwless_front_text('Mínimo de %d caracteres'), $min_length)));
     $optional = array(
         'pwless_pw_require_upper' => array('/\p{Lu}/u', 'Ao menos uma letra maiúscula'),
         'pwless_pw_require_lower' => array('/\p{Ll}/u', 'Ao menos uma letra minúscula'),
@@ -545,7 +631,7 @@ function pwless_get_password_requirements()
 
     foreach ($optional as $option => $requirement) {
         if (get_option($option)) {
-            $requirements[] = $requirement;
+            $requirements[] = array($requirement[0], pwless_front_text($requirement[1]));
         }
     }
 
@@ -567,7 +653,7 @@ function pwless_get_password_errors($password)
 function pwless_change_password_form()
 {
     if (!is_user_logged_in()) {
-        return '<p class="pwless-change-password-notice">Você precisa estar logado para alterar sua senha.</p>';
+        return '<p class="pwless-change-password-notice">' . esc_html(pwless_front_text('Você precisa estar logado para alterar sua senha.')) . '</p>';
     }
 
     $password_id = wp_unique_id('pwless_new_password_');
@@ -578,16 +664,16 @@ function pwless_change_password_form()
     <form class="pwless-change-password-form" data-ajax-url="<?php echo esc_url(admin_url('admin-ajax.php')); ?>">
         <input type="hidden" name="action" value="pwless_change_password">
         <input type="hidden" name="security" value="<?php echo esc_attr(wp_create_nonce('pwless_change_password')); ?>">
-        <label for="<?php echo esc_attr($password_id); ?>">Nova senha</label>
+        <label for="<?php echo esc_attr($password_id); ?>"><?php echo esc_html(pwless_front_text('Nova senha')); ?></label>
         <input type="password" id="<?php echo esc_attr($password_id); ?>" name="new_password" autocomplete="new-password" required>
-        <label for="<?php echo esc_attr($confirm_id); ?>">Repita a nova senha</label>
+        <label for="<?php echo esc_attr($confirm_id); ?>"><?php echo esc_html(pwless_front_text('Repita a nova senha')); ?></label>
         <input type="password" id="<?php echo esc_attr($confirm_id); ?>" name="confirm_password" autocomplete="new-password" required>
         <ul class="pwless-password-requirements">
             <?php foreach (pwless_get_password_requirements() as $requirement): ?>
                 <li><?php echo esc_html($requirement[1]); ?></li>
             <?php endforeach; ?>
         </ul>
-        <button type="submit">Salvar</button>
+        <button type="submit"><?php echo esc_html(pwless_front_text('Salvar')); ?></button>
         <p class="pwless-change-password-message" role="status" aria-live="polite"></p>
     </form>
 
@@ -638,7 +724,7 @@ function pwless_change_password_form()
                 };
 
                 if (form.elements.new_password.value !== form.elements.confirm_password.value) {
-                    show('As senhas não coincidem.', false);
+                    show(<?php echo wp_json_encode(pwless_front_text('As senhas não coincidem.')); ?>, false);
                     return;
                 }
 
@@ -647,13 +733,13 @@ function pwless_change_password_form()
                     .then(function (response) { return response.json(); })
                     .then(function (result) {
                         var ok = !!(result && result.success);
-                        show((result && result.data && result.data.message) || 'Não foi possível alterar a senha.', ok);
+                        show((result && result.data && result.data.message) || <?php echo wp_json_encode(pwless_front_text('Não foi possível alterar a senha.')); ?>, ok);
                         if (ok) {
                             form.reset();
                             form.elements.security.value = result.data.nonce;
                         }
                     })
-                    .catch(function () { show('Não foi possível alterar a senha.', false); })
+                    .catch(function () { show(<?php echo wp_json_encode(pwless_front_text('Não foi possível alterar a senha.')); ?>, false); })
                     .finally(function () { button.disabled = false; });
             });
         });
@@ -673,16 +759,16 @@ function pwless_ajax_change_password()
     $confirm = isset($_POST['confirm_password']) ? wp_unslash((string) $_POST['confirm_password']) : '';
 
     if ($password !== $confirm) {
-        wp_send_json_error(array('message' => 'As senhas não coincidem.'));
+        wp_send_json_error(array('message' => pwless_front_text('As senhas não coincidem.')));
     }
 
     if (strpos($password, '\\') !== false) {
-        wp_send_json_error(array('message' => 'A senha não pode conter o caractere "\\".'));
+        wp_send_json_error(array('message' => pwless_front_text('A senha não pode conter o caractere "\\".')));
     }
 
     $errors = pwless_get_password_errors($password);
     if (!empty($errors)) {
-        wp_send_json_error(array('message' => 'A senha não atende aos requisitos: ' . implode(', ', $errors) . '.'));
+        wp_send_json_error(array('message' => pwless_front_text('A senha não atende aos requisitos: ') . implode(', ', $errors) . '.'));
     }
 
     $user = wp_get_current_user();
@@ -696,7 +782,7 @@ function pwless_ajax_change_password()
 
     pwless_log_attempt($user->user_email, 'senha_alterada');
     wp_send_json_success(array(
-        'message' => 'Senha alterada com sucesso.',
+        'message' => pwless_front_text('Senha alterada com sucesso.'),
         'nonce' => wp_create_nonce('pwless_change_password'),
     ));
 }
@@ -744,7 +830,7 @@ function pwless_process_reset_link_form_submission()
     }
 
     if (!wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['pwless_rp_nonce'])), 'pwless_rp_set_password')) {
-        $GLOBALS['pwless_rp_error'] = 'Erro de validação. Por favor, tente novamente.';
+        $GLOBALS['pwless_rp_error'] = pwless_front_text('Erro de validação. Por favor, tente novamente.');
         return;
     }
 
@@ -752,7 +838,7 @@ function pwless_process_reset_link_form_submission()
     $token = sanitize_text_field(wp_unslash($_POST['pwless_rp_token']));
     $user = pwless_rp_validate_token($user_id, $token);
     if (!$user) {
-        $GLOBALS['pwless_rp_error'] = 'Link inválido ou expirado. Solicite um novo.';
+        $GLOBALS['pwless_rp_error'] = pwless_front_text('Link inválido ou expirado. Solicite um novo.');
         return;
     }
 
@@ -762,18 +848,18 @@ function pwless_process_reset_link_form_submission()
     $confirm = isset($_POST['confirm_password']) ? wp_unslash((string) $_POST['confirm_password']) : '';
 
     if ($password !== $confirm) {
-        $GLOBALS['pwless_rp_error'] = 'As senhas não coincidem.';
+        $GLOBALS['pwless_rp_error'] = pwless_front_text('As senhas não coincidem.');
         return;
     }
 
     if (strpos($password, '\\') !== false) {
-        $GLOBALS['pwless_rp_error'] = 'A senha não pode conter o caractere "\\".';
+        $GLOBALS['pwless_rp_error'] = pwless_front_text('A senha não pode conter o caractere "\\".');
         return;
     }
 
     $errors = pwless_get_password_errors($password);
     if (!empty($errors)) {
-        $GLOBALS['pwless_rp_error'] = 'A senha não atende aos requisitos: ' . implode(', ', $errors) . '.';
+        $GLOBALS['pwless_rp_error'] = pwless_front_text('A senha não atende aos requisitos: ') . implode(', ', $errors) . '.';
         return;
     }
 
@@ -784,7 +870,7 @@ function pwless_process_reset_link_form_submission()
     $loggedin_check = pwless_apply_loggedin_session_limit($user->ID);
     if (!$loggedin_check['allowed']) {
         pwless_log_attempt($user->user_email, 'reset_link_bloqueado');
-        wp_die($loggedin_check['message'], 'Login bloqueado', array('response' => 403));
+        wp_die($loggedin_check['message'], pwless_front_text('Login bloqueado'), array('response' => 403));
     }
 
     wp_set_current_user($user->ID);
@@ -813,12 +899,12 @@ function pwless_reset_link_form()
         $email = sanitize_email(wp_unslash($_POST['user_email']));
 
         if (!is_email($email)) {
-            $message = "<p class='error'>Por favor, insira um endereço de e-mail válido.</p>";
+            $message = "<p class='error'>" . esc_html(pwless_front_text('Por favor, insira um endereço de e-mail válido.')) . "</p>";
             pwless_log_attempt($email, 'reset_link_erro_email_invalido');
         } else {
             $user = get_user_by('email', $email);
             if (!$user) {
-                $message = "<p class='success'>Se o e-mail estiver cadastrado, você receberá um link para redefinir sua senha.</p>";
+                $message = "<p class='success'>" . esc_html(pwless_front_text('Se o e-mail estiver cadastrado, você receberá um link para redefinir sua senha.')) . "</p>";
                 pwless_log_attempt($email, 'reset_link_usuario_nao_encontrado');
             } else {
                 $token = wp_generate_password(32, false);
@@ -831,20 +917,20 @@ function pwless_reset_link_form()
                 ), get_permalink());
 
                 $expiry = intval(get_option('pwless_rp_link_expiry', 60));
-                $email_template = get_option('pwless_rp_email_template', '<a href="{reset_url}">Clique aqui para definir uma nova senha</a><br><br>O link tem validade de {expiry_time} minuto(s).');
+                $email_template = pwless_front_text(get_option('pwless_rp_email_template', '<a href="{reset_url}">Clique aqui para definir uma nova senha</a><br><br>O link tem validade de {expiry_time} minuto(s).'));
                 $email_content = str_replace(
                     array('{reset_url}', '{expiry_time}'),
                     array($reset_url, $expiry),
                     $email_template
                 );
 
-                $subject = get_option('pwless_rp_email_subject', 'Redefina sua senha');
+                $subject = pwless_front_text(get_option('pwless_rp_email_subject', 'Redefina sua senha'));
 
                 if (pwless_send_html_mail($email, $subject, $email_content)) {
-                    $message = "<p class='success'>Se o e-mail estiver cadastrado, você receberá um link para redefinir sua senha.</p>";
+                    $message = "<p class='success'>" . esc_html(pwless_front_text('Se o e-mail estiver cadastrado, você receberá um link para redefinir sua senha.')) . "</p>";
                     pwless_log_attempt($email, 'reset_link_enviado');
                 } else {
-                    $message = "<p class='error'>Erro ao enviar email.</p>";
+                    $message = "<p class='error'>" . esc_html(pwless_front_text('Erro ao enviar email.')) . "</p>";
                     pwless_log_attempt($email, 'reset_link_erro_envio_email');
                 }
             }
@@ -856,7 +942,7 @@ function pwless_reset_link_form()
     $token_valid = ($token !== '' && $token_user_id > 0) ? pwless_rp_validate_token($token_user_id, $token) : false;
 
     if ($token !== '' && !$token_valid) {
-        $message = "<p class='error'>Link inválido ou expirado. Solicite um novo.</p>";
+        $message = "<p class='error'>" . esc_html(pwless_front_text('Link inválido ou expirado. Solicite um novo.')) . "</p>";
     }
 
     ob_start();
@@ -866,28 +952,28 @@ function pwless_reset_link_form()
             <?php wp_nonce_field('pwless_rp_set_password', 'pwless_rp_nonce'); ?>
             <input type="hidden" name="pwless_rp_token" value="<?php echo esc_attr($token); ?>">
             <input type="hidden" name="pwless_rp_user" value="<?php echo esc_attr($token_user_id); ?>">
-            <h3>Defina sua nova senha</h3>
-            <label for="pwless_rp_new_password">Nova senha</label>
+            <h3><?php echo esc_html(pwless_front_text('Defina sua nova senha')); ?></h3>
+            <label for="pwless_rp_new_password"><?php echo esc_html(pwless_front_text('Nova senha')); ?></label>
             <input type="password" id="pwless_rp_new_password" name="new_password" autocomplete="new-password" required>
-            <label for="pwless_rp_confirm_password">Repita a nova senha</label>
+            <label for="pwless_rp_confirm_password"><?php echo esc_html(pwless_front_text('Repita a nova senha')); ?></label>
             <input type="password" id="pwless_rp_confirm_password" name="confirm_password" autocomplete="new-password" required>
             <ul class="pwless-password-requirements">
                 <?php foreach (pwless_get_password_requirements() as $requirement): ?>
                     <li><?php echo esc_html($requirement[1]); ?></li>
                 <?php endforeach; ?>
             </ul>
-            <input type="submit" value="Salvar nova senha">
+            <input type="submit" value="<?php echo esc_attr(pwless_front_text('Salvar nova senha')); ?>">
             <?php if (!empty($GLOBALS['pwless_rp_error'])): ?>
                 <p class="error"><?php echo esc_html($GLOBALS['pwless_rp_error']); ?></p>
             <?php endif; ?>
         <?php else: ?>
             <?php wp_nonce_field('pwless_rp_request', 'pwless_rp_nonce_field'); ?>
-            <h3>Redefinir Senha</h3>
-            <label for="user_email">Endereço de e-mail:</label>
+            <h3><?php echo esc_html(pwless_front_text('Redefinir Senha')); ?></h3>
+            <label for="user_email"><?php echo esc_html(pwless_front_text('Endereço de e-mail:')); ?></label>
             <input type="email" id="user_email" name="user_email" value="<?php echo esc_attr($email); ?>" required>
-            <input type="submit" value="Enviar link de redefinição">
-            <div id="loader" style="display:none;">Enviando... <img
-                    src="<?php echo plugins_url('assets/loading.gif', __FILE__); ?>" alt="Carregando"></div>
+            <input type="submit" value="<?php echo esc_attr(pwless_front_text('Enviar link de redefinição')); ?>">
+            <div id="loader" style="display:none;"><?php echo esc_html(pwless_front_text('Enviando...')); ?> <img
+                    src="<?php echo plugins_url('assets/loading.gif', __FILE__); ?>" alt="<?php echo esc_attr(pwless_front_text('Carregando')); ?>"></div>
             <?php echo wp_kses_post($message); ?>
         <?php endif; ?>
     </form>
@@ -958,7 +1044,7 @@ function pwless_is_loggedin_plugin_active()
 
 function pwless_loggedin_limit_error_message()
 {
-    $message = 'Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.';
+    $message = pwless_front_text('Você atingiu o limite máximo de logins simultâneos. Por favor, aguarde as sessões antigas expirarem ou faça logout em outro dispositivo.');
 
     if (!pwless_is_loggedin_plugin_active()) {
         return $message;
@@ -1785,23 +1871,23 @@ function pwless_process_admin_generated_user_link()
 
     if (empty($data['token_hash']) || !wp_check_password($token, $data['token_hash'])) {
         pwless_log_attempt($email, 'admin_link_invalido');
-        wp_die('Link inválido. Solicite um novo link ao administrador.', 'Link inválido', array('response' => 403));
+        wp_die(pwless_front_text('Link inválido. Solicite um novo link ao administrador.'), pwless_front_text('Link inválido'), array('response' => 403));
     }
 
     if ($data['expires_at'] > 0 && $now > $data['expires_at']) {
         pwless_log_attempt($email, 'admin_link_expirado');
-        wp_die('Este link expirou. Solicite um novo link ao administrador.', 'Link expirado', array('response' => 403));
+        wp_die(pwless_front_text('Este link expirou. Solicite um novo link ao administrador.'), pwless_front_text('Link expirado'), array('response' => 403));
     }
 
     if ($data['max_uses'] > 0 && $data['uses'] >= $data['max_uses']) {
         pwless_log_attempt($email, 'admin_link_limite');
-        wp_die('Este link já atingiu o limite de usos.', 'Limite atingido', array('response' => 403));
+        wp_die(pwless_front_text('Este link já atingiu o limite de usos.'), pwless_front_text('Limite atingido'), array('response' => 403));
     }
 
     $loggedin_check = pwless_apply_loggedin_session_limit($user_id);
     if (!$loggedin_check['allowed']) {
         pwless_log_attempt($email, 'admin_link_bloqueado');
-        wp_die($loggedin_check['message'], 'Login bloqueado', array('response' => 403));
+        wp_die($loggedin_check['message'], pwless_front_text('Login bloqueado'), array('response' => 403));
     }
 
     $data['uses'] = intval($data['uses']) + 1;
@@ -1982,9 +2068,9 @@ function pwless_get_passwordless_confirmation_page_settings()
     $defaults = pwless_get_passwordless_confirmation_page_defaults();
 
     return array(
-        'title' => get_option('pwless_confirmation_page_title', $defaults['title']),
-        'message' => get_option('pwless_confirmation_page_message', $defaults['message']),
-        'button_label' => get_option('pwless_confirmation_page_button_label', $defaults['button_label']),
+        'title' => pwless_front_text(get_option('pwless_confirmation_page_title', $defaults['title'])),
+        'message' => pwless_front_text(get_option('pwless_confirmation_page_message', $defaults['message'])),
+        'button_label' => pwless_front_text(get_option('pwless_confirmation_page_button_label', $defaults['button_label'])),
     );
 }
 
@@ -2020,6 +2106,8 @@ function pwless_render_passwordless_login_page($args = array())
         'nonce' => '',
     ));
 
+    $args['title'] = pwless_front_text($args['title']);
+    $args['message'] = pwless_front_text($args['message']);
     status_header(max(100, intval($args['response_code'])));
     nocache_headers();
 
@@ -2118,7 +2206,7 @@ function pwless_render_passwordless_login_page($args = array())
                     <button type="submit" class="pwless-button"><?php echo esc_html($args['button_label']); ?></button>
                 </form>
             <?php else: ?>
-                <a class="pwless-link" href="<?php echo esc_url($home_link); ?>">Voltar ao site</a>
+                <a class="pwless-link" href="<?php echo esc_url($home_link); ?>"><?php echo esc_html(pwless_front_text('Voltar ao site')); ?></a>
             <?php endif; ?>
         </main>
     </body>
@@ -2140,7 +2228,7 @@ function pwless_process_passwordless_login_legacy()
 
             // Verifica se o nonce é válido e o token não expirou
             pwless_log_attempt($user ? $user->user_email : 'unknown', $validation['log_status']);
-            echo '<p class="error">' . esc_html($validation['message']) . '</p>';
+            echo '<p class="error">' . esc_html(pwless_front_text($validation['message'])) . '</p>';
             return;
         }
         $user = $validation['user'];

@@ -15,6 +15,8 @@ Este plugin oferece uma maneira segura e conveniente de fazer login no WordPress
 - Compatível com temas modernos do WordPress
 - Opção de redirecionamento após login
 
+O front-end e os e-mails padrão seguem o idioma do site: inglês para `en_US` e outras variantes `en`, português para os demais idiomas. Textos personalizados no painel permanecem como foram salvos; o painel do plugin continua em português.
+
 ## Instalação
 
 1. Faça upload dos arquivos do plugin para a pasta `/wp-content/plugins/`
@@ -28,7 +30,7 @@ Este plugin oferece uma maneira segura e conveniente de fazer login no WordPress
 
 ## Versão
 
-Versão atual: 4.4.1
+Versão atual: 4.5.0
 
 ## Autor
 
